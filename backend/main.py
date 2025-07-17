@@ -89,17 +89,26 @@ async def search(
 
         query_features /= query_features.norm(dim=-1, keepdim=True)
         query = query_features.cpu().numpy().astype(np.float32)
-        faiss.normalize_L2(query)
+        #faiss.normalize_L2(query)
     except Exception as e:
         return JSONResponse({"error": f"Failed to compute features: {e}"}, status_code=500)
 
     # Search in FAISS
     index = index_map[index_type]
     D, I = index.search(query, top_k)
+    print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
     id_map = id_maps[index_type]
 
-    image_ids = [id_map[i] for i in I[0] if D[0][I[0].tolist().index(i)] >= threshold]
-    scores = [float(s) for s in D[0].tolist() if s >= threshold]
+    image_ids = []
+    scores = []
+
+    for idx, i in enumerate(I[0]):
+        score = float(D[0][idx])
+        if score >= threshold:
+            if i in id_map:
+                image_ids.append(id_map[i])
+                scores.append(score)
+
 
     # Fetch metadata from Supabase
     variant_data = []
