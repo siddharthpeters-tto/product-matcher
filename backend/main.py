@@ -19,7 +19,11 @@ load_dotenv()
 print("✅ Environment loaded")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"✅ Device: {device}")
-model, preprocess = clip.load("ViT-B/32", device=device)
+try:
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    print("✅ CLIP model loaded")
+except Exception as e:
+    print(f"❌ Failed to load CLIP model: {e}")
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 print("✅ Supabase client initialized")
 
