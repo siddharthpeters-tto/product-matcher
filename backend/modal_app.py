@@ -11,14 +11,13 @@ import torch
 import clip
 from dotenv import load_dotenv
 from supabase import create_client
-# Corrected import path for APIError from postgrest.exceptions
-from postgrest.exceptions import APIError 
+from postgrest.exceptions import APIError # Corrected import path for APIError
 
 # Import the shared image definition
 from lens_image import lens_image
 
-# Persisted volume to store FAISS indexes (must be the same name as used by build_index.py)
-nfs = modal.Volume.from_name("faiss-index-storage", create_if_missing=False)
+# Updated: Use modal.NetworkFileSystem.from_name for the NFS volume
+nfs = modal.NetworkFileSystem.from_name("faiss-index-storage", create_if_missing=False)
 
 app = App("search-app", image=lens_image, secrets=[Secret.from_name("supabase-creds")])
 
