@@ -14,12 +14,24 @@ from supabase import create_client
 from postgrest.exceptions import APIError # Corrected import path for APIError
 
 # Import the shared image definition
-from lens_image import lens_image
+from lens_image import lens_image # This import is fine locally, but needs to be mounted for Modal
 
-# Updated: Use modal.NetworkFileSystem.from_name for the NFS volume
+# Persisted volume to store FAISS indexes (must be the same name as used by build_index.py)
 nfs = modal.NetworkFileSystem.from_name("faiss-index-storage", create_if_missing=False)
 
-app = App("search-app", image=lens_image, secrets=[Secret.from_name("supabase-creds")])
+# Add a Mount for the backend directory to include lens_image.py
+# This ensures lens_image.py is available in the container's /root directory
+app = App(
+    "search-app",
+    image=lens_image,
+    secrets=[Secret.from_name("supabase-creds")],
+    mounts=[
+        modal.Mount.from_local_dir(
+            local_path="./backend", # Path to your backend directory
+            remote_path="/root"     # Where it will be mounted in the container
+        )
+    ]
+)
 
 @app.function(network_file_systems={"/data": nfs}, gpu="A10G")
 @modal.asgi_app()
