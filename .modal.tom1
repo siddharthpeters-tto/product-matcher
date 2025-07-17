@@ -1,0 +1,4 @@
+[app]
+name = "search-app"
+entrypoint = "backend/modal_app.py"
+function = "fastapi_app"

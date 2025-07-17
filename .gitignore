@@ -1,0 +1,47 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+*.pyo
+
+# Jupyter and IPython
+.ipynb_checkpoints/
+
+# Environment files
+.env
+*.env
+
+# Modal cache or data
+/data/
+.progress.json
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# VS Code or other IDE settings
+.vscode/
+.idea/
+
+# Virtual environments
+venv/
+.env/
+.venv/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# CSVs and scraped product data (optional, if regenerated)
+*.csv
+
+# Secret keys or configs (if not using Modal Secrets)
+secrets.json
+supabase_creds.json
