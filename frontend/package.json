@@ -4,6 +4,7 @@
   "description": "Product Matcher Frontend",
   "scripts": {
     "build": "parcel build src/index.html --dist-dir build",
+    "start": "npx serve build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
