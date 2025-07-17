@@ -10,9 +10,9 @@ from fastapi.responses import JSONResponse
 import torch
 import clip
 from dotenv import load_dotenv
-# Updated: Import APIError from supabase.lib.client
 from supabase import create_client
-from supabase.lib.client import APIError # Corrected import path for APIError
+# Corrected import path for APIError from postgrest.exceptions
+from postgrest.exceptions import APIError 
 
 # Import the shared image definition
 from lens_image import lens_image
