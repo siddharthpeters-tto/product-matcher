@@ -39,22 +39,23 @@ const fetchResults = async ({ file, text }) => {
   setImagePreview(file ? URL.createObjectURL(file) : null);
 
   try {
-    const formData = new FormData();
-    if (file) {
-      formData.append("file", file);
-    }
-
-    if (text && text.trim().length > 0) {
-      formData.append("text", text.trim());
-    }
-
     if (!file && (!text || text.trim() === "")) {
       setMessage("Please provide an image or text to search.");
       setLoading(false);
       return;
     }
 
-    const endpoint = `${API_URL}?index_type=${indexType}&threshold=${threshold}`;
+    const formData = new FormData();
+    if (file) formData.append("file", file);
+
+    const queryParams = new URLSearchParams({
+      index_type: indexType,
+      threshold: threshold.toString(),
+    });
+    if (text) queryParams.append("text", text.trim());
+
+    const endpoint = `${API_URL}?${queryParams.toString()}`;
+
     const res = await fetch(endpoint, {
       method: "POST",
       body: formData,
@@ -62,7 +63,7 @@ const fetchResults = async ({ file, text }) => {
 
     const data = await res.json();
     if (res.ok) {
-      if (data.results && data.results.length > 0) {
+      if (data.results?.length > 0) {
         setResults(data.results);
         setMessage(`Found ${data.results.length} matches.`);
       } else {
@@ -79,6 +80,7 @@ const fetchResults = async ({ file, text }) => {
     setLoading(false);
   }
 };
+
 
 
   const handleUpload = (e) => {
