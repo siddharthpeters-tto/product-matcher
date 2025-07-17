@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 
 // IMPORTANT: Replace this with your deployed Modal FastAPI app URL
 // Example: const API_URL = "https://your-modal-app-name-your-username.modal.run/search";
-const API_URL = "https://siddharth-1--search-app-fastapi-app.modal.run/search"; // Placeholder, update after deployment
+const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
 
 export default function ProductSearch() {
   const [threshold, setThreshold] = useState(0.75); // Adjusted default threshold
