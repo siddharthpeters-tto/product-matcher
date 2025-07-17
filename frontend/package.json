@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "Product Matcher Frontend",
   "scripts": {
-    "start": "parcel public/index.html --port 8080",
-    "build": "parcel build src/index.html --dist-dir build"
+    "build": "parcel build src/index.html --dist-dir build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
