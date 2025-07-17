@@ -5,8 +5,9 @@ numpy
 torch
 Pillow
 requests
-clip @ git+https://github.com/openai/CLIP.git
 tqdm
+clip @ git+https://github.com/openai/CLIP.git
 python-dotenv
 supabase
 postgrest-py
+python-multipart
