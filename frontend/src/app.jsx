@@ -1,4 +1,3 @@
-import React from "react";
 import ProductSearch from "./ProductSearch";
 
 export default function App() {
