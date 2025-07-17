@@ -97,6 +97,7 @@ async def search(
     index = index_map[index_type]
     D, I = index.search(query, top_k)
     print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
+    print("Top raw FAISS indices:", I[0][:10])
     id_map = id_maps[index_type]
 
     image_ids = []
@@ -104,10 +105,13 @@ async def search(
 
     for idx, i in enumerate(I[0]):
         score = float(D[0][idx])
-        if score >= threshold:
-            if i in id_map:
-                image_ids.append(id_map[i])
-                scores.append(score)
+        print(f"Index: {i}, Score: {score}")
+        if score >= threshold and 0 <= i < len(id_map):
+            print(f"✅ Match: {id_map[i]}")
+            image_ids.append(id_map[i])
+            scores.append(score)
+
+
 
 
     # Fetch metadata from Supabase
