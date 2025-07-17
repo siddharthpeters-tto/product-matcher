@@ -26,11 +26,6 @@ export default function ProductSearch() {
     }
   }, [indexType]);
 
-  const fetchResults = async ({ file, text }) => {
-    setLoading(true);
-    setResults([]);
-    setMessage(""); // Clear previous messages
-    setImagePreview(file ? URL.createObjectURL(file) : null);
 
 const fetchResults = async ({ file, text }) => {
   setLoading(true);
