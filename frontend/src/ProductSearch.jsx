@@ -20,8 +20,11 @@ export default function ProductSearch() {
       fetchResults({ file: uploadedFile });
     } else if (searchText.trim()) {
       fetchResults({ text: searchText.trim() });
+    } else {
+      // Do not call fetchResults at all
+      setMessage("Please upload an image or enter text before switching search mode.");
     }
-  }, [indexType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [indexType]);
 
   const fetchResults = async ({ file, text }) => {
     setLoading(true);
