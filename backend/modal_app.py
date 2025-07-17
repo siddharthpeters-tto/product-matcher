@@ -1,5 +1,5 @@
 import modal
-from modal import App, Image, Secret # Removed Mount from this import
+from modal import App, Image, Secret, Mount
 import os, io, json
 import faiss
 import numpy as np
@@ -14,7 +14,7 @@ from supabase import create_client
 from postgrest.exceptions import APIError # Corrected import path for APIError
 
 # Import the shared image definition
-from lens_image import lens_image # This import is fine locally, but needs to be mounted for Modal
+from backend.lens_image import lens_image
 
 # Persisted volume to store FAISS indexes (must be the same name as used by build_index.py)
 nfs = modal.NetworkFileSystem.from_name("faiss-index-storage", create_if_missing=False)
@@ -184,3 +184,7 @@ def fastapi_app():
         return {"results": results}
 
     return api_app
+
+if __name__ == "__main__":
+    with app.run():
+        fastapi_app()
