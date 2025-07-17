@@ -32,43 +32,54 @@ export default function ProductSearch() {
     setMessage(""); // Clear previous messages
     setImagePreview(file ? URL.createObjectURL(file) : null);
 
-    try {
-      const formData = new FormData();
-      if (file) {
-        formData.append("file", file);
-      } else if (text) {
-        formData.append("text", text);
-      } else {
-        setMessage("Please provide an image or text to search.");
-        setLoading(false);
-        return;
-      }
+const fetchResults = async ({ file, text }) => {
+  setLoading(true);
+  setResults([]);
+  setMessage("");
+  setImagePreview(file ? URL.createObjectURL(file) : null);
 
-      const endpoint = `${API_URL}?index_type=${indexType}&threshold=${threshold}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        if (data.results && data.results.length > 0) {
-          setResults(data.results);
-          setMessage(`Found ${data.results.length} matches.`);
-        } else {
-          setResults([]);
-          setMessage("No matching products found above the threshold.");
-        }
-      } else {
-        throw new Error(data.error || "Unknown error from API.");
-      }
-    } catch (err) {
-      setMessage("Search error: " + err.message);
-      console.error("Search error:", err);
-    } finally {
-      setLoading(false);
+  try {
+    const formData = new FormData();
+    if (file) {
+      formData.append("file", file);
     }
-  };
+
+    if (text && text.trim().length > 0) {
+      formData.append("text", text.trim());
+    }
+
+    if (!file && (!text || text.trim() === "")) {
+      setMessage("Please provide an image or text to search.");
+      setLoading(false);
+      return;
+    }
+
+    const endpoint = `${API_URL}?index_type=${indexType}&threshold=${threshold}`;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      if (data.results && data.results.length > 0) {
+        setResults(data.results);
+        setMessage(`Found ${data.results.length} matches.`);
+      } else {
+        setResults([]);
+        setMessage("No matching products found above the threshold.");
+      }
+    } else {
+      throw new Error(data.error || "Unknown error from API.");
+    }
+  } catch (err) {
+    setMessage("Search error: " + err.message);
+    console.error("Search error:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleUpload = (e) => {
     const file = e.target.files[0];
