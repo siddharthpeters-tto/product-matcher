@@ -12,10 +12,16 @@ from dotenv import load_dotenv
 from supabase import create_client
 from postgrest.exceptions import APIError
 
+print("🚀 Starting main.py...")
+
+
 load_dotenv()
+print("✅ Environment loaded")
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"✅ Device: {device}")
 model, preprocess = clip.load("ViT-B/32", device=device)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+print("✅ Supabase client initialized")
 
 def download_file(bucket, path):
     try:
