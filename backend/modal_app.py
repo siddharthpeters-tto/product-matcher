@@ -1,5 +1,5 @@
 import modal
-from modal import App, Image, Secret
+from modal import App, Image, Secret, Mount # Added Mount to the import list
 import os, io, json
 import faiss
 import numpy as np
@@ -26,7 +26,7 @@ app = App(
     image=lens_image,
     secrets=[Secret.from_name("supabase-creds")],
     mounts=[
-        modal.Mount.from_local_dir(
+        Mount.from_local_dir( # Changed from modal.Mount to Mount
             local_path="./backend", # Path to your backend directory
             remote_path="/root"     # Where it will be mounted in the container
         )
