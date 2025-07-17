@@ -3,6 +3,8 @@ import React, { useState, useEffect } from "react";
 // IMPORTANT: Replace this with your deployed Modal FastAPI app URL
 // Example: const API_URL = "https://your-modal-app-name-your-username.modal.run/search";
 const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
+//const API_URL = "http://localhost:8000/search";
+
 
 export default function ProductSearch() {
   const [threshold, setThreshold] = useState(0.75); // Adjusted default threshold
@@ -164,9 +166,9 @@ const fetchResults = async ({ file, text }) => {
       {message && <p className="text-gray-600 text-sm">{message}</p>}
 
       {results.length > 0 && (
-        <section className="flex flex-wrap gap-6 justify-center mt-8">
+        <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-8">
           {results.map((item, i) => (
-            <div key={i} className="w-44 p-4 border border-gray-200 rounded-xl shadow-md bg-white flex flex-col items-center text-center">
+            <div key={i} className="p-4 border border-gray-200 rounded-xl shadow-md bg-white flex flex-col items-center text-center">
               <img
                 src={item.image_path}
                 alt={item.product_name}
