@@ -9,6 +9,7 @@ const API_URL = "http://localhost:8000/search";
 export default function ProductSearch() {
   const [threshold, setThreshold] = useState(0.25); // Adjusted default threshold
   const [results, setResults] = useState([]);
+  const [groupedResults, setGroupedResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -62,14 +63,32 @@ const fetchResults = async ({ file, text }) => {
     if (res.ok) {
       if (data.results?.length > 0) {
         setResults(data.results);
+
+        const grouped = data.results.reduce((acc, item) => {
+          const key = item.variant_id;
+          if (!acc[key]) {
+            acc[key] = {
+              ...item,
+              images: []
+            };
+          }
+          acc[key].images.push({
+            image_id: item.image_id,
+            image_path: item.image_path,
+            score: item.score
+          });
+          return acc;
+        }, {});
+
+        setGroupedResults(Object.values(grouped));
         setMessage(`Found ${data.results.length} matches.`);
       } else {
         setResults([]);
+        setGroupedResults([]);
         setMessage("No matching products found above the threshold.");
       }
-    } else {
-      throw new Error(data.error || "Unknown error from API.");
     }
+
   } catch (err) {
     setMessage("Search error: " + err.message);
     console.error("Search error:", err);
@@ -169,34 +188,43 @@ const fetchResults = async ({ file, text }) => {
       {loading && <p className="text-indigo-600 font-medium">🔄 Searching...</p>}
       {message && <p className="text-gray-600 text-sm">{message}</p>}
 
-      {results.length > 0 && (
-        <section className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-8">
-          {results.map((item, i) => (
-            <div key={i} className="p-4 border border-gray-200 rounded-xl shadow-md bg-white flex flex-col items-center text-center">
-              <img
-                src={item.image_path}
-                alt={item.product_name}
-                className="w-full h-32 object-cover rounded-md mb-3"
-                onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/128x128/e0e0e0/000000?text=No+Image`; }}
-              />
-              <div className="flex-grow">
-                <a 
-                  href={item.product_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block text-indigo-700 text-base font-semibold underline truncate hover:text-indigo-900"
-                >
-                  {item.variant_name}
-                </a>
-                <div className="text-sm text-gray-600 truncate">{item.brand_name}</div>
+      {groupedResults.length > 0 && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-8">
+          {groupedResults.map((variant, i) => (
+            <div key={i} className="p-4 border border-gray-200 rounded-xl shadow-md bg-white">
+              <a
+                href={variant.product_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-indigo-700 font-semibold text-base underline truncate hover:text-indigo-900"
+              >
+                {variant.variant_name}
+              </a>
+              <div className="text-sm text-gray-600 truncate">{variant.brand_name}</div>
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                {variant.images.map((img, j) => (
+                  <img
+                    key={j}
+                    src={img.image_path}
+                    alt={variant.variant_name}
+                    className="w-20 h-20 object-cover rounded-md shadow-sm"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://placehold.co/80x80/e0e0e0/000000?text=No+Image`;
+                    }}
+                  />
+                ))}
               </div>
+
               <div className="mt-3 text-sm font-medium text-indigo-700">
-                Match: {(item.score * 100).toFixed(1)}%
+                Best Match: {(Math.max(...variant.images.map(i => i.score)) * 100).toFixed(1)}%
               </div>
             </div>
           ))}
         </section>
       )}
+
     </div>
   );
 }
