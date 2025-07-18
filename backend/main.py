@@ -135,25 +135,9 @@ async def search(
         for chunk in chunk_list(image_ids, 50):
             try:
                 response = (
-                    supabase.table("product_images")
-                    .select("""
-                        id,
-                        image_url,
-                        product_variant(
-                            id,
-                            name,
-                            model_number,
-                            products(
-                                id,
-                                name,
-                                brands(
-                                    id,
-                                    name
-                                )
-                            )
-                        )
-                    """)
-                    .in_("id", chunk)
+                    supabase.table("product_image_metadata")
+                    .select("*")
+                    .in_("image_id", chunk)
                     .execute()
                 )
                 if response.data:
@@ -168,9 +152,20 @@ async def search(
         score = scores[idx]
         match = next((item for item in variant_data if item["id"] == img_id), None)
         if match:
-            variant = match.get("product_variant")
-            product = variant.get("product") if variant else None
-            brand = product.get("brand") if product else None
+            variant = {
+                "id": match.get("variant_id"),
+                "name": match.get("variant_name"),
+                "model_number": match.get("model_number")
+            }
+            product = {
+                "id": match.get("product_id"),
+                "name": match.get("product_name")
+            }
+            brand = {
+                "id": match.get("brand_id"),
+                "name": match.get("brand_name")
+            }
+
 
             results.append({
                 "image_id": img_id,
