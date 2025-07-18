@@ -99,7 +99,7 @@ async def search(
 
         query_features /= query_features.norm(dim=-1, keepdim=True)
         query = query_features.cpu().numpy().astype(np.float32)
-        #faiss.normalize_L2(query)
+        faiss.normalize_L2(query)
     except Exception as e:
         return JSONResponse({"error": f"Failed to compute features: {e}"}, status_code=500)
 
