@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 
 // IMPORTANT: Replace this with your deployed Modal FastAPI app URL
 // Example: const API_URL = "https://your-modal-app-name-your-username.modal.run/search";
-const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
-//const API_URL = "http://localhost:8000/search";
+//const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
+const API_URL = "http://localhost:8000/search";
 
 
 export default function ProductSearch() {
@@ -180,7 +180,14 @@ const fetchResults = async ({ file, text }) => {
                 onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/128x128/e0e0e0/000000?text=No+Image`; }}
               />
               <div className="flex-grow">
-                <strong className="block text-gray-900 text-base font-semibold truncate">{item.variant_name}</strong>
+                <a 
+                  href={item.product_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="block text-indigo-700 text-base font-semibold underline truncate hover:text-indigo-900"
+                >
+                  {item.variant_name}
+                </a>
                 <div className="text-sm text-gray-600 truncate">{item.brand_name}</div>
               </div>
               <div className="mt-3 text-sm font-medium text-indigo-700">
