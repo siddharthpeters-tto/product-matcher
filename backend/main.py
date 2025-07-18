@@ -109,9 +109,10 @@ async def search(
     print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
     print("Top raw FAISS indices:", I[0][:10])
     print("Matched image IDs:")
+    id_map = id_maps[index_type]
+    
     for idx in I[0][:10]:
         print(f"{id_map[idx]}")
-    id_map = id_maps[index_type]
 
     image_ids = []
     scores = []
