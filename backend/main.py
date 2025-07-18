@@ -111,7 +111,7 @@ async def search(
 
     # Debug similarity
     try:
-        raw_match_vec = index.reconstruct(I[0][0])
+        raw_match_vec = index.reconstruct(int(I[0][0]))
         top_cos_sim = float(np.dot(query[0], raw_match_vec))
         print(f"🧠 Cosine similarity with top match: {top_cos_sim:.6f}")
     except Exception as e:
