@@ -116,6 +116,7 @@ async def search(
     for idx, i in enumerate(I[0]):
         score = float(D[0][idx])
         print(f"Index: {i}, Score: {score}")
+        print(f"Match ID: {id_map[i]}")
         if score >= threshold and 0 <= i < len(id_map):
             print(f"✅ Match: {id_map[i]}")
             image_ids.append(id_map[i])
@@ -138,7 +139,7 @@ async def search(
                     .select("""
                         id,
                         image_url,
-                        product_variants(
+                        product_variant(
                             id,
                             name,
                             model_number,
@@ -167,9 +168,9 @@ async def search(
         score = scores[idx]
         match = next((item for item in variant_data if item["id"] == img_id), None)
         if match:
-            variant = match.get("product_variants")
-            product = variant.get("products") if variant else None
-            brand = product.get("brands") if product else None
+            variant = match.get("product_variant")
+            product = variant.get("product") if variant else None
+            brand = product.get("brand") if product else None
 
             results.append({
                 "image_id": img_id,
