@@ -14,16 +14,17 @@ from postgrest.exceptions import APIError
 
 print("🚀 Starting main.py...")
 
-
 load_dotenv()
 print("✅ Environment loaded")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"✅ Device: {device}")
+
 try:
     model, preprocess = clip.load("ViT-B/32", device=device)
     print("✅ CLIP model loaded")
 except Exception as e:
     print(f"❌ Failed to load CLIP model: {e}")
+
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 print("✅ Supabase client initialized")
 
@@ -38,7 +39,7 @@ def download_file(bucket, path):
         print(f"❌ Failed to download {path}: {e}")
         return None
 
-# Load FAISS indexes and ID maps from Supabase
+# Load FAISS indexes and ID maps
 index_map = {}
 id_maps = {}
 for mode in ["color", "structure", "combined"]:
@@ -97,37 +98,38 @@ async def search(
             with torch.no_grad():
                 query_features = model.encode_text(text_tokens)
 
-        query_features /= query_features.norm(dim=-1, keepdim=True)
+        # One clean L2 normalization (same as sanity.py)
         query = query_features.cpu().numpy().astype(np.float32)
-        faiss.normalize_L2(query)
+        query /= np.linalg.norm(query, axis=1, keepdims=True)
+
     except Exception as e:
         return JSONResponse({"error": f"Failed to compute features: {e}"}, status_code=500)
 
     # Search in FAISS
     index = index_map[index_type]
     D, I = index.search(query, top_k)
+
+    # Debug similarity
+    try:
+        raw_match_vec = index.reconstruct(I[0][0])
+        top_cos_sim = float(np.dot(query[0], raw_match_vec))
+        print(f"🧠 Cosine similarity with top match: {top_cos_sim:.6f}")
+    except Exception as e:
+        print(f"⚠️ Failed to compute top match cosine similarity: {e}")
+
     print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
     print("Top raw FAISS indices:", I[0][:10])
-    print("Matched image IDs:")
-    id_map = id_maps[index_type]
-    
-    for idx in I[0][:10]:
-        print(f"{id_map[idx]}")
 
+    id_map = id_maps[index_type]
     image_ids = []
     scores = []
 
     for idx, i in enumerate(I[0]):
         score = float(D[0][idx])
-        print(f"Index: {i}, Score: {score}")
-        print(f"Match ID: {id_map[i]}")
         if score >= threshold and 0 <= i < len(id_map):
-            print(f"✅ Match: {id_map[i]}")
+            print(f"✅ Match: {id_map[i]} — Score: {score}")
             image_ids.append(id_map[i])
             scores.append(score)
-
-
-
 
     # Fetch metadata from Supabase
     variant_data = []
@@ -156,38 +158,23 @@ async def search(
         score = scores[idx]
         match = next((item for item in variant_data if item["image_id"] == img_id), None)
         if match:
-            variant = {
-                "id": match.get("variant_id"),
-                "name": match.get("variant_name"),
-                "model_number": match.get("model_number")
-            }
-            product = {
-                "id": match.get("product_id"),
-                "name": match.get("product_name")
-            }
-            brand = {
-                "id": match.get("brand_id"),
-                "name": match.get("brand_name")
-            }
-
-
             results.append({
                 "image_id": img_id,
                 "image_path": match.get("image_url", "N/A"),
                 "score": round(score, 4),
-                "variant_id": variant.get("id") if variant else None,
-                "variant_name": variant.get("name") if variant else None,
-                "model_number": variant.get("model_number") if variant else None,
-                "product_id": product.get("id") if product else None,
-                "product_name": product.get("name") if product else None,
-                "brand_id": brand.get("id") if brand else None,
-                "brand_name": brand.get("name") if brand else None,
+                "variant_id": match.get("variant_id"),
+                "variant_name": match.get("variant_name"),
+                "model_number": match.get("model_number"),
+                "product_id": match.get("product_id"),
+                "product_name": match.get("product_name"),
+                "brand_id": match.get("brand_id"),
+                "brand_name": match.get("brand_name"),
             })
 
     results.sort(key=lambda x: x['score'], reverse=True)
     return {"results": results}
 
-# Entry point if running locally
+# Entry point for local testing
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
