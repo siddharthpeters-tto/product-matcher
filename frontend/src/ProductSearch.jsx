@@ -7,7 +7,7 @@ const API_URL = "https://product-matcher-production-dc50.up.railway.app/search";
 
 
 export default function ProductSearch() {
-  const [threshold, setThreshold] = useState(0.75); // Adjusted default threshold
+  const [threshold, setThreshold] = useState(0.25); // Adjusted default threshold
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
@@ -176,9 +176,8 @@ const fetchResults = async ({ file, text }) => {
                 onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/128x128/e0e0e0/000000?text=No+Image`; }}
               />
               <div className="flex-grow">
-                <strong className="block text-gray-900 text-base font-semibold truncate">{item.product_name}</strong>
+                <strong className="block text-gray-900 text-base font-semibold truncate">{item.variant_name}</strong>
                 <div className="text-sm text-gray-600 truncate">{item.brand_name}</div>
-                <div className="text-xs text-gray-500 mt-1">Model: {item.model_number}</div>
               </div>
               <div className="mt-3 text-sm font-medium text-indigo-700">
                 Match: {(item.score * 100).toFixed(1)}%
