@@ -150,7 +150,7 @@ async def search(
     results = []
     for idx, img_id in enumerate(image_ids):
         score = scores[idx]
-        match = next((item for item in variant_data if item["id"] == img_id), None)
+        match = next((item for item in variant_data if item["image_id"] == img_id), None)
         if match:
             variant = {
                 "id": match.get("variant_id"),
