@@ -8,9 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import torch
 import clip
+import hashlib
 from dotenv import load_dotenv
 from supabase import create_client
 from postgrest.exceptions import APIError
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 
 print("🚀 Starting main.py...")
 
@@ -109,37 +113,6 @@ async def search(
     index = index_map[index_type]
     D, I = index.search(query, top_k)
 
-    # Debug similarity
-    # Debug similarity
-    try:
-        top_idx = int(I[0][0])
-        top_vec = index.reconstruct(top_idx)
-        top_cos_sim = float(np.dot(query[0], top_vec))
-        print(f"🧠 Cosine similarity with top match ({id_maps[index_type][top_idx]}): {top_cos_sim:.6f}")
-
-        # Replace with your actual expected image_id
-        expected_image_id = "bb0321f8-cf6c-4900-99ae-06c24a95d18e"
-
-        # Find the index of the expected image in the ID map
-        expected_idx = None
-        for i, img_id in enumerate(id_maps[index_type]):
-            if img_id == expected_image_id:
-                expected_idx = i
-                break
-
-        if expected_idx is not None:
-            expected_vec = index.reconstruct(expected_idx)
-            expected_sim = float(np.dot(query[0], expected_vec))
-            diff_norm = np.linalg.norm(query[0] - expected_vec)
-            print(f"🧪 Cosine similarity with expected image ({expected_image_id}): {expected_sim:.6f}")
-            print(f"🧪 L2 distance from expected image: {diff_norm:.10f}")
-        else:
-            print(f"⚠️ Expected image ID '{expected_image_id}' not found in FAISS ID map.")
-
-    except Exception as e:
-        print(f"⚠️ Failed to compute detailed similarity diagnostics: {e}")
-
-
     print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
     print("Top raw FAISS indices:", I[0][:10])
 
@@ -192,6 +165,7 @@ async def search(
                 "product_name": match.get("product_name"),
                 "brand_id": match.get("brand_id"),
                 "brand_name": match.get("brand_name"),
+                "product_url": match.get("product_url"), 
             })
 
     results.sort(key=lambda x: x['score'], reverse=True)
