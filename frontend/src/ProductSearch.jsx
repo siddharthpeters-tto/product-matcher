@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 
 // IMPORTANT: Replace this with your deployed Modal FastAPI app URL
 // Example: const API_URL = "https://your-modal-app-name-your-username.modal.run/search";
-//const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
-const API_URL = "http://localhost:8000/search";
+const API_URL = "https://product-matcher-production-dc50.up.railway.app/search"; // Placeholder, update after deployment
+//const API_URL = "http://localhost:8000/search";
 
 
 export default function ProductSearch() {
