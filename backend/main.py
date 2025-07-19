@@ -165,7 +165,9 @@ async def search(
                 "product_name": match.get("product_name"),
                 "brand_id": match.get("brand_id"),
                 "brand_name": match.get("brand_name"),
-                "product_url": match.get("product_url"), 
+                "product_url": match.get("product_url"),
+                "product_category": match.get("product_category"),
+ 
             })
 
     results.sort(key=lambda x: x['score'], reverse=True)
