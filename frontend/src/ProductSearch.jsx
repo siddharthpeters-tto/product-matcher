@@ -201,7 +201,11 @@ const fetchResults = async ({ file, text }) => {
                 {variant.variant_name}
               </a>
               <div className="text-sm text-gray-600 truncate">{variant.brand_name}</div>
-
+              {variant.product_category && (
+                <div className="inline-block mt-1 px-2 py-0.5 text-xs bg-indigo-100 text-indigo-800 rounded-full">
+                {variant.product_category.toUpperCase()}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 mt-3">
                 {variant.images.map((img, j) => (
                   <img
