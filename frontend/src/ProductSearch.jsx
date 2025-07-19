@@ -129,7 +129,7 @@ const fetchResults = async ({ file, text }) => {
           </label>
           <label className="inline-flex items-center">
             <input type="radio" value="structure" checked={indexType === "structure"} onChange={e => setIndexType(e.target.value)} className="form-radio text-indigo-600" />
-            <span className="ml-2 text-gray-700">Structure (Grayscale)</span>
+            <span className="ml-2 text-gray-700">Structure</span>
           </label>
           <label className="inline-flex items-center">
             <input type="radio" value="combined" checked={indexType === "combined"} onChange={e => setIndexType(e.target.value)} className="form-radio text-indigo-600" />
