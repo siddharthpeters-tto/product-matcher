@@ -14,7 +14,7 @@ export default function ProductSearch() {
   const [imagePreview, setImagePreview] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [searchText, setSearchText] = useState("");
-  const [indexType, setIndexType] = useState("color");
+  const [indexType, setIndexType] = useState("combined");
   const [message, setMessage] = useState(""); // For user messages/errors
 
   // Effect to trigger search when indexType changes if there's already input
