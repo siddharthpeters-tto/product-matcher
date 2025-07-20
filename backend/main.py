@@ -93,14 +93,14 @@ async def search(
             keyword_resp = (
                 supabase.table("product_image_metadata")
                 .select("*")
-                .or_(
-                    f"variant_name.ilike.%{keyword}%",
-                    f"model_number.ilike.%{keyword}%",
-                    f"product_name.ilike.%{keyword}%"
+                .filter(
+                    "or",
+                    f"variant_name.ilike.%{keyword}%,model_number.ilike.%{keyword}%,product_name.ilike.%{keyword}%"
                 )
                 .limit(top_k)
                 .execute()
             )
+
             if keyword_resp.data:
                 for record in keyword_resp.data:
                     results.append({
