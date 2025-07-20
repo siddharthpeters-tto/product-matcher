@@ -99,7 +99,7 @@ async def search(
             keyword_resp = (
                 supabase.table("product_image_metadata")
                 .select("*")
-                .or_(keyword_expr)
+                .filter("or", "("+ keyword_expr +")")  # 👈 wrap expression in parentheses
                 .limit(top_k)
                 .execute()
             )
