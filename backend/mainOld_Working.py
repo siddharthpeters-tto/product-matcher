@@ -77,54 +77,17 @@ app.add_middleware(
 async def search(
     file: UploadFile = File(None),
     text: str = Query(None),
-    index_type: str = Query("combined"),  # You said this is your default now
+    index_type: str = Query("color"),
     threshold: float = Query(0.75),
     top_k: int = Query(20)
 ):
     if not file and not text:
         return JSONResponse({"error": "Either 'file' or 'text' must be provided."}, status_code=400)
 
-    results = []
-
-    # ✅ Try keyword match via Supabase if it's a text search
-    if text:
-        keyword = text.lower()
-        try:
-            keyword_resp = (
-                supabase.table("product_image_metadata")
-                .select("*")
-                .or_(
-                    f"variant_name.ilike.%{keyword}%,"
-                    f"model_number.ilike.%{keyword}%,"
-                    f"product_name.ilike.%{keyword}%"
-                )
-                .limit(top_k)
-                .execute()
-            )
-            if keyword_resp.data:
-                for record in keyword_resp.data:
-                    results.append({
-                        "image_id": record["image_id"],
-                        "image_path": record["image_url"],
-                        "score": 1.0,
-                        "variant_id": record.get("variant_id"),
-                        "variant_name": record.get("variant_name"),
-                        "model_number": record.get("model_number"),
-                        "product_id": record.get("product_id"),
-                        "product_name": record.get("product_name"),
-                        "brand_id": record.get("brand_id"),
-                        "brand_name": record.get("brand_name"),
-                        "product_url": record.get("product_url"),
-                        "product_category": record.get("product_category")
-                    })
-                return {"results": results}
-        except Exception as e:
-            print(f"❌ Supabase keyword search error: {e}")
-
-    # 🧠 Fall back to CLIP if no keyword matches or it's an image search
     if index_type not in index_map or not index_map[index_type]:
         return JSONResponse({"error": f"Invalid or missing index: {index_type}"}, status_code=500)
 
+    # Generate query vector
     try:
         if file:
             image_bytes = await file.read()
@@ -139,24 +102,32 @@ async def search(
             with torch.no_grad():
                 query_features = model.encode_text(text_tokens)
 
+        # One clean L2 normalization (same as sanity.py)
         query = query_features.cpu().numpy().astype(np.float32)
         query /= np.linalg.norm(query, axis=1, keepdims=True)
 
     except Exception as e:
         return JSONResponse({"error": f"Failed to compute features: {e}"}, status_code=500)
 
+    # Search in FAISS
     index = index_map[index_type]
     D, I = index.search(query, top_k)
-    id_map = id_maps[index_type]
 
-    image_ids, scores = [], []
+    print("Top cosine similarities:", [round(float(d), 4) for d in D[0][:10]])
+    print("Top raw FAISS indices:", I[0][:10])
+
+    id_map = id_maps[index_type]
+    image_ids = []
+    scores = []
+
     for idx, i in enumerate(I[0]):
         score = float(D[0][idx])
         if score >= threshold and 0 <= i < len(id_map):
+            print(f"✅ Match: {id_map[i]} — Score: {score}")
             image_ids.append(id_map[i])
             scores.append(score)
 
-    # Metadata fetch
+    # Fetch metadata from Supabase
     variant_data = []
     if image_ids:
         def chunk_list(data, size):
@@ -177,7 +148,8 @@ async def search(
                 print(f"❌ Metadata fetch error: {e}")
                 continue
 
-    # Build final results
+    # Build result
+    results = []
     for idx, img_id in enumerate(image_ids):
         score = scores[idx]
         match = next((item for item in variant_data if item["image_id"] == img_id), None)
@@ -194,7 +166,8 @@ async def search(
                 "brand_id": match.get("brand_id"),
                 "brand_name": match.get("brand_name"),
                 "product_url": match.get("product_url"),
-                "product_category": match.get("product_category")
+                "product_category": match.get("product_category"),
+ 
             })
 
     results.sort(key=lambda x: x['score'], reverse=True)
