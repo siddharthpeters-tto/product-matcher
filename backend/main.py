@@ -94,8 +94,8 @@ async def search(
                 supabase.table("product_image_metadata")
                 .select("*")
                 .or_(
-                    f"variant_name.ilike.%{keyword}%,"
-                    f"model_number.ilike.%{keyword}%,"
+                    f"variant_name.ilike.%{keyword}%",
+                    f"model_number.ilike.%{keyword}%",
                     f"product_name.ilike.%{keyword}%"
                 )
                 .limit(top_k)
