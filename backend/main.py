@@ -90,7 +90,7 @@ async def search(
     if text:
         keyword = text.lower()
         try:
-            or_expression = (
+            keyword_expr = (
                 f"variant_name.ilike.%{keyword}%,"
                 f"model_number.ilike.%{keyword}%,"
                 f"product_name.ilike.%{keyword}%"
@@ -99,7 +99,7 @@ async def search(
             keyword_resp = (
                 supabase.table("product_image_metadata")
                 .select("*")
-                .filter("or", or_expression)
+                .or_(keyword_expr)
                 .limit(top_k)
                 .execute()
             )
