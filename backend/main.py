@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 import torch
 import clip
 import hashlib
+from postgrest import or_
 from dotenv import load_dotenv
 from supabase import create_client
 from postgrest.exceptions import APIError
@@ -93,9 +94,12 @@ async def search(
             keyword_resp = (
                 supabase.table("product_image_metadata")
                 .select("*")
-                .filter(
-                    "or",
-                    f"variant_name.ilike.%{keyword}%,model_number.ilike.%{keyword}%,product_name.ilike.%{keyword}%"
+                .or_(
+                    or_(
+                        f"variant_name.ilike.%{keyword}%",
+                        f"model_number.ilike.%{keyword}%",
+                        f"product_name.ilike.%{keyword}%"
+                    )
                 )
                 .limit(top_k)
                 .execute()
