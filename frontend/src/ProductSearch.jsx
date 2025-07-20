@@ -181,7 +181,7 @@ const fetchResults = async ({ file, text }) => {
       {imagePreview && (
         <div className="mb-4">
           <p className="text-gray-700 text-sm font-bold mb-2">Preview:</p>
-          <img src={imagePreview} alt="preview" className="w-48 h-48 object-cover rounded-lg shadow-md" />
+          <img src={imagePreview} alt="preview" className="w-48 h-48 object-contain rounded-lg shadow-md" />
         </div>
       )}
 
@@ -212,7 +212,7 @@ const fetchResults = async ({ file, text }) => {
                     key={j}
                     src={img.image_path}
                     alt={variant.variant_name}
-                    className="w-20 h-20 object-cover rounded-md shadow-sm"
+                    className="w-20 h-20 object-contain rounded-md shadow-sm"
                     onError={(e) => {
                       e.target.onerror = null;
                       e.target.src = `https://placehold.co/80x80/e0e0e0/000000?text=No+Image`;
