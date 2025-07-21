@@ -89,34 +89,44 @@ async def search(
     # ✅ Try keyword match via Supabase if it's a text search
     if text:
         keyword = text.lower()
+        keyword_expr = (
+            f"or("
+            f"variant_name.ilike.%{keyword}%,"
+            f"model_number.ilike.%{keyword}%,"
+            f"product_name.ilike.%{keyword}%"
+            f")"
+        )
+
         try:
-            keyword_expr = (
-                f"variant_name.ilike.%{keyword}%,"
-                f"model_number.ilike.%{keyword}%,"
-                f"product_name.ilike.%{keyword}%"
+            keyword_resp = (
+                supabase.table("product_image_metadata_view")
+                .select("*")
+                .or_(keyword_expr)
+                .limit(top_k)
+                .execute()
             )
+            print(f"✅ Supabase query returned {len(keyword_resp.data)} results")
 
-            # Use the correct Supabase view and bulletproof .or_() query
-            keyword_expr = (
-                f"or("
-                f"variant_name.ilike.%{keyword}%,"
-                f"model_number.ilike.%{keyword}%,"
-                f"product_name.ilike.%{keyword}%"
-                f")"
-            )
+            if keyword_resp.data:
+                for record in keyword_resp.data:
+                    results.append({
+                        "image_id": record["image_id"],
+                        "image_path": record["image_url"],
+                        "score": 1.0,
+                        "variant_id": record.get("variant_id"),
+                        "variant_name": record.get("variant_name"),
+                        "model_number": record.get("model_number"),
+                        "product_id": record.get("product_id"),
+                        "product_name": record.get("product_name"),
+                        "brand_id": record.get("brand_id"),
+                        "brand_name": record.get("brand_name"),
+                        "product_url": record.get("product_url"),
+                        "product_category": record.get("product_category")
+                    })
+                return {"results": results}
 
-            try:
-                keyword_resp = (
-                    supabase.table("product_image_metadata_view")
-                    .select("*")
-                    .or_(keyword_expr)
-                    .limit(top_k)
-                    .execute()
-                )
-                print(f"✅ Supabase query returned {len(keyword_resp.data)} results")
-            except Exception as e:
-                print(f"❌ Supabase keyword search error: {e}")
-                raise  # Let it crash visibly in dev so you fix once, not guess twice
+        except Exception as e:
+            print(f"❌ Supabase keyword search error: {e}")
 
     # 🧠 Fall back to CLIP if no keyword matches or it's an image search
     if index_type not in index_map or not index_map[index_type]:
