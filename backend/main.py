@@ -88,17 +88,12 @@ async def search(
 
     if text:
         keyword = text.lower()
-        keyword_expr = f"or(variant_name.ilike.%{keyword}%,model_number.ilike.%{keyword}%,product_name.ilike.%{keyword}%)"
-
-
-        # 🔍 Bonus Debug Tip — see exactly what's being passed to Supabase
-        print("🔍 Supabase keyword filter expression:", keyword_expr)
 
         try:
             keyword_resp = (
                 supabase.table("product_image_metadata_view")
                 .select("*")
-                .filter("or", keyword_expr)
+                .ilike("product_name", f"%{keyword}%")
                 .limit(top_k)
                 .execute()
             )
@@ -120,10 +115,12 @@ async def search(
                         "product_url": record.get("product_url"),
                         "product_category": record.get("product_category")
                     })
+
                 return {"results": results}
 
         except Exception as e:
             print(f"❌ Supabase keyword search error: {e}")
+
 
     # 🧠 Fall back to CLIP if no keyword matches or it's an image search
     if index_type not in index_map or not index_map[index_type]:
