@@ -86,16 +86,18 @@ async def search(
 
     results = []
 
-    # ✅ Try keyword match via Supabase if it's a text search
     if text:
         keyword = text.lower()
         keyword_expr = (
-            f"or("
+            "or("
             f"variant_name.ilike.%{keyword}%,"
             f"model_number.ilike.%{keyword}%,"
             f"product_name.ilike.%{keyword}%"
-            f")"
+            ")"
         )
+
+        # 🔍 Bonus Debug Tip — see exactly what's being passed to Supabase
+        print("🔍 Supabase keyword filter expression:", keyword_expr)
 
         try:
             keyword_resp = (
