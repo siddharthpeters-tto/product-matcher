@@ -91,7 +91,7 @@ async def search(
 
         try:
             keyword_resp = (
-                supabase.table("product_image_metadata_view")
+                supabase.table("product_image_metadata")
                 .select("*")
                 .ilike("product_name", f"%{keyword}%")
                 .limit(top_k)
