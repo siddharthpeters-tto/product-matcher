@@ -88,13 +88,8 @@ async def search(
 
     if text:
         keyword = text.lower()
-        keyword_expr = (
-            "or("
-            f"variant_name.ilike.%{keyword}%,"
-            f"model_number.ilike.%{keyword}%,"
-            f"product_name.ilike.%{keyword}%"
-            ")"
-        )
+        keyword_expr = f"or(variant_name.ilike.%{keyword}%,model_number.ilike.%{keyword}%,product_name.ilike.%{keyword}%)"
+
 
         # 🔍 Bonus Debug Tip — see exactly what's being passed to Supabase
         print("🔍 Supabase keyword filter expression:", keyword_expr)
