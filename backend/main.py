@@ -79,7 +79,7 @@ async def search(
     text: str = Query(None),
     index_type: str = Query("combined"),  # You said this is your default now
     threshold: float = Query(0.75),
-    top_k: int = Query(20)
+    top_k: int = Query(100)
 ):
     if not file and not text:
         return JSONResponse({"error": "Either 'file' or 'text' must be provided."}, status_code=400)
@@ -99,32 +99,22 @@ async def search(
             )
             print(f"✅ Supabase query returned {len(keyword_resp.data)} results")
 
-            seen_variants = set()
-
             if keyword_resp.data:
                 for record in keyword_resp.data:
-                    variant_id = record.get("variant_id")
-
-                    if variant_id not in seen_variants:
-                        seen_variants.add(variant_id)
-
-                        results.append({
-                            "image_id": record["image_id"],
-                            "image_path": record["image_url"],
-                            "score": 1.0,
-                            "variant_id": record.get("variant_id"),
-                            "variant_name": record.get("variant_name"),
-                            "model_number": record.get("model_number"),
-                            "product_id": record.get("product_id"),
-                            "product_name": record.get("product_name"),
-                            "brand_id": record.get("brand_id"),
-                            "brand_name": record.get("brand_name"),
-                            "product_url": record.get("product_url"),
-                            "product_category": record.get("product_category")
-                        })
-
-                        if len(results) >= top_k:
-                            break
+                    results.append({
+                        "image_id": record["image_id"],
+                        "image_path": record["image_url"],
+                        "score": 1.0,
+                        "variant_id": record.get("variant_id"),
+                        "variant_name": record.get("variant_name"),
+                        "model_number": record.get("model_number"),
+                        "product_id": record.get("product_id"),
+                        "product_name": record.get("product_name"),
+                        "brand_id": record.get("brand_id"),
+                        "brand_name": record.get("brand_name"),
+                        "product_url": record.get("product_url"),
+                        "product_category": record.get("product_category")
+                    })
 
                 return {"results": results}
 
