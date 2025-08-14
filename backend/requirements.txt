@@ -8,6 +8,6 @@ clip @ git+https://github.com/openai/CLIP.git
 python-dotenv==1.0.1
 supabase==2.4.0
 postgrest==0.16.10
-realtime==2.5.0
-aiohttp==3.12.13
+realtime==1.0.4
+aiohttp==3.8.5
 python-multipart==0.0.9
