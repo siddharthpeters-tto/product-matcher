@@ -39,15 +39,9 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 clip_dim = model.encode_image(torch.zeros((1, 3, 224, 224)).to(device)).shape[1]
 print(f"✅ CLIP model loaded, embedding dim: {clip_dim}")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL") or None
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or None
+SUPABASE_URL = "https://rffqzfdzosambdxmpuac.supabase.co/"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjEyNDIyOCwiZXhwIjoyMDY3NzAwMjI4fQ.Lsu2SmeJFL_LWTdUtIoNWrKABVxoPl91i4tpulF4UbA"
 
-if not SUPABASE_URL:
-    SUPABASE_URL = "https://rffqzfdzosambdxmpuac.supabase.co/"
-if not SUPABASE_KEY:
-    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjEyNDIyOCwiZXhwIjoyMDY3NzAwMjI4fQ.Lsu2SmeJFL_LWTdUtIoNWrKABVxoPl91i4tpulF4UbA"
-#if not SUPABASE_URL or not SUPABASE_KEY:
-#    raise ValueError("Supabase credentials missing.")
 print(f"Final SUPABASE_URL: '{SUPABASE_URL}'")
 print(f"Final SUPABASE_KEY length: {len(SUPABASE_KEY)}")
 print(f"First 20 chars of key: {SUPABASE_KEY[:20]}")
