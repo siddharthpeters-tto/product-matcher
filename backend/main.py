@@ -103,18 +103,22 @@ def load_index_mode(mode: str, refresh_cache: bool = False):
         return memory_index_cache[mode], memory_idmap_cache[mode]
 
     # Build aggregated FAISS index from shards (L2 on normalized vectors)
-    index = load_sharded_index(supabase, mode, expected_dim=clip_dim, threaded=True)
+    try:
+        index = load_sharded_index(supabase, mode, expected_dim=clip_dim, threaded=True)
+    except Exception as e:
+        # Bubble up a clear error; the endpoint will convert to HTTP 503
+        raise RuntimeError(f"Index load failed for '{mode}': {e}")
 
-    # id_map lives in Supabase as JSON: id_map_{mode}.json
     idmap_path = supabase_download("faiss", f"id_map_{mode}.json")
     if not idmap_path:
         raise RuntimeError(f"ID map for {mode} missing.")
     with open(idmap_path, "r") as f:
-        id_map = json.load(f)  # <-- LIST of image_ids in FAISS row order
+        id_map = json.load(f)  # LIST
 
     memory_index_cache[mode] = index
     memory_idmap_cache[mode] = id_map
     return index, id_map
+
 
 
 # --------------------------
@@ -212,10 +216,11 @@ async def unified_search(
                 return {"results": results}
         except APIError as e:
             print(f"Keyword search error: {e}")
-
     # Vector search (image or text)
-    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
-
+    try:
+        index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
     # Early guard if index is empty
     if getattr(index, "ntotal", 0) == 0:
         return {"results": []}

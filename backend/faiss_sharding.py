@@ -178,33 +178,48 @@ def load_sharded_index(
     """Load all shards for an embedding type into a FAISS IndexShards aggregator.
 
     If no shards exist, returns an empty IndexFlatL2 of expected_dim (or 512).
+    Raises a clear RuntimeError if any shard fails to download/deserialize.
     """
     manifest = load_manifest(supabase, embed_type)
     shards_meta: List[dict] = manifest.get("shards", [])
     if not shards_meta:
         d = int(expected_dim or 512)
+        print(f"[faiss_sharding] No shards for '{embed_type}'. Returning empty IndexFlatL2({d}).")
         return faiss.IndexFlatL2(d)
 
-    # Load all shard indexes
     sub_indexes: List[faiss.Index] = []
     d_first: Optional[int] = None
     for s in shards_meta:
-        path = s["file"]  # full path within bucket
-        blob = supabase.storage.from_(BUCKET).download(path)
-        sub = faiss.deserialize_index(blob)
+        path = s.get("file")
+        if not path:
+            raise RuntimeError(f"[faiss_sharding] Manifest shard missing 'file' key: {s}")
+
+        try:
+            blob = supabase.storage.from_(BUCKET).download(path)
+        except Exception as e:
+            raise RuntimeError(f"[faiss_sharding] Failed to download shard '{path}': {e}")
+
+        if not blob:
+            raise RuntimeError(f"[faiss_sharding] Shard '{path}' is empty or not found in bucket '{BUCKET}'")
+
+        try:
+            sub = faiss.deserialize_index(blob)
+        except Exception as e:
+            raise RuntimeError(f"[faiss_sharding] Failed to deserialize shard '{path}': {e}")
+
         if d_first is None:
             d_first = int(sub.d)
         sub_indexes.append(sub)
 
     d = int(d_first or expected_dim or 512)
 
-    # Aggregate shards. Some FAISS builds expect extra constructor params; try safest form.
     try:
         agg = faiss.IndexShards(d, threaded)
     except TypeError:
-        # fallback for versions requiring (d, threaded, own_fields)
         agg = faiss.IndexShards(d, threaded, False)
 
     for sub in sub_indexes:
         agg.add_shard(sub)
+
+    print(f"[faiss_sharding] Loaded {len(sub_indexes)} shard(s) for '{embed_type}', dim={d}.")
     return agg
