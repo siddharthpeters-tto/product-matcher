@@ -41,7 +41,10 @@ print(f"✅ CLIP model loaded, embedding dim: {clip_dim}")
 
 SUPABASE_URL = "https://rffqzfdzosambdxmpuac.supabase.co/"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjEyNDIyOCwiZXhwIjoyMDY3NzAwMjI4fQ.Lsu2SmeJFL_LWTdUtIoNWrKABVxoPl91i4tpulF4UbA"
-
+import requests
+print("Testing Supabase connectivity...")
+resp = requests.get(SUPABASE_URL + "/auth/v1")
+print("Status:", resp.status_code)
 print(f"Final SUPABASE_URL: '{SUPABASE_URL}'")
 print(f"Final SUPABASE_KEY length: {len(SUPABASE_KEY)}")
 print(f"First 20 chars of key: {SUPABASE_KEY[:20]}")
