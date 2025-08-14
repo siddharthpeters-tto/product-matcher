@@ -220,6 +220,8 @@ async def unified_search(
     try:
         index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
     except Exception as e:
+        print("Index load failed:", e)
+        traceback.print_exc()
         raise HTTPException(status_code=503, detail=str(e))
     # Early guard if index is empty
     if getattr(index, "ntotal", 0) == 0:
