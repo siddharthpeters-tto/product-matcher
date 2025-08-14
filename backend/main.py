@@ -120,7 +120,7 @@ def load_index_mode(mode: str, refresh_cache: bool = False):
 
     shard_paths = [supabase_download("faiss", shard) for shard in shards]
 
-    index = load_sharded_index(shard_paths, expected_dim=manifest["dimension"])
+    index = load_sharded_index(supabase, mode, expected_dim=manifest["dimension"])
 
     idmap_path = supabase_download("faiss", f"id_map_{mode}.json")
     if not idmap_path:
