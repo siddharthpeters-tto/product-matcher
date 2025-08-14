@@ -1,11 +1,13 @@
-fastapi
-uvicorn
-numpy
-Pillow
-requests
-tqdm
+fastapi==0.115.0
+uvicorn==0.30.6
+numpy==1.26.4
+Pillow==10.4.0
+requests==2.32.3
+tqdm==4.66.5
 clip @ git+https://github.com/openai/CLIP.git
-python-dotenv
-supabase
-postgrest-py
-python-multipart
+python-dotenv==1.0.1
+supabase==2.4.0
+postgrest==1.1.1
+realtime==2.5.0
+aiohttp==3.12.13
+python-multipart==0.0.9
