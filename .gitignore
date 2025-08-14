@@ -45,3 +45,13 @@ dist/
 # Secret keys or configs (if not using Modal Secrets)
 secrets.json
 supabase_creds.json
+
+# Ignore all node_modules globally
+**/node_modules/
+
+echo "node_modules/" >> .gitignore
+echo ".parcel-cache/" >> .gitignore
+echo "build/" >> .gitignore
+echo ".env" >> .gitignore
+
+git rm -r --cached node_modules .parcel-cache build
