@@ -20,10 +20,11 @@ COPY requirements.txt /tmp/requirements.txt
 # Upgrade pip and install heavy dependencies first (cached layer)
 # Install CPU-only PyTorch & torchvision from official index
 RUN pip install --upgrade pip \
- && pip install torch==2.1.2+cpu torchvision==0.16.2+cpu \
-      --extra-index-url https://download.pytorch.org/whl/cpu \
+ && pip cache purge \
+ && pip install torch==2.1.2 torchvision==0.16.2 \
  && pip install faiss-cpu==1.7.4 \
  && pip install -r /tmp/requirements.txt
+
 
 # Copy application code
 COPY . /app
