@@ -15,7 +15,8 @@ from postgrest.exceptions import APIError
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-
+#Testing rebuild
+#Ignore comment
 print("🚀 Starting main.py...")
 
 load_dotenv()
