@@ -12,7 +12,10 @@ RUN pip install --upgrade pip \
  && pip cache purge \
  && pip install torch==2.1.2+cpu torchvision==0.16.2+cpu faiss-cpu==1.7.4 \
      --extra-index-url https://download.pytorch.org/whl/cpu \
- && pip install -r /tmp/requirements.txt
+ && pip install -r /tmp/requirements.txt \
+ && pip freeze > /tmp/requirements.lock \
+ && RUN cat /tmp/requirements.lock
+
 
 COPY . /app
 
