@@ -14,12 +14,11 @@ import torch
 import clip
 from PIL import Image as PILImage
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile, Query
+from fastapi import FastAPI, File, UploadFile, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client
 from postgrest.exceptions import APIError
-
 from faiss_sharding import load_sharded_index
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -49,7 +48,6 @@ print(f"Final SUPABASE_URL: '{SUPABASE_URL}'")
 print(f"Final SUPABASE_KEY length: {len(SUPABASE_KEY)}")
 print(f"First 20 chars of key: {SUPABASE_KEY[:20]}")
 
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 print("✅ Supabase client initialized")
 
@@ -61,7 +59,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # In-memory cache
 memory_index_cache: Dict[str, faiss.Index] = {}
-memory_idmap_cache: Dict[str, dict] = {}
+memory_idmap_cache: Dict[str, list] = {}
 
 # --------------------------
 # Supabase helpers
@@ -99,40 +97,20 @@ def list_manifests(bucket: str) -> List[str]:
 # --------------------------
 # FAISS loader
 # --------------------------
+# Simplify index loading to use the sharded loader; no manifest "dimension" checks
 def load_index_mode(mode: str, refresh_cache: bool = False):
-    """Load FAISS index & ID map for a mode (lazy, cached)."""
     if not refresh_cache and mode in memory_index_cache:
         return memory_index_cache[mode], memory_idmap_cache[mode]
 
-    manifest_path = supabase_download("faiss", f"clip_{mode}_manifest.json")
-    if not manifest_path:
-        raise RuntimeError(f"Manifest for {mode} missing.")
+    # Build aggregated FAISS index from shards (L2 on normalized vectors)
+    index = load_sharded_index(supabase, mode, expected_dim=clip_dim, threaded=True)
 
-    with open(manifest_path, "r") as f:
-        manifest = json.load(f)
-
-    # Check dimension match
-    if manifest.get("dimension") != clip_dim:
-        raise ValueError(f"Dimension mismatch for {mode}: manifest={manifest.get('dimension')} model={clip_dim}")
-
-    shards = manifest.get("shards", [])
-    if not shards:
-        raise ValueError(f"No shards in manifest for {mode}")
-
-    # Check integrity
-    for shard in shards:
-        if not supabase_download("faiss", shard):
-            raise RuntimeError(f"Shard missing: {shard}")
-
-    shard_paths = [supabase_download("faiss", shard) for shard in shards]
-
-    index = load_sharded_index(supabase, mode, expected_dim=manifest["dimension"])
-
+    # id_map lives in Supabase as JSON: id_map_{mode}.json
     idmap_path = supabase_download("faiss", f"id_map_{mode}.json")
     if not idmap_path:
         raise RuntimeError(f"ID map for {mode} missing.")
     with open(idmap_path, "r") as f:
-        id_map = json.load(f)
+        id_map = json.load(f)  # <-- LIST of image_ids in FAISS row order
 
     memory_index_cache[mode] = index
     memory_idmap_cache[mode] = id_map
@@ -140,30 +118,45 @@ def load_index_mode(mode: str, refresh_cache: bool = False):
 
 
 # --------------------------
-# Helpers
+# Encoders (L2-normalized)
 # --------------------------
 def encode_image(image: PILImage.Image):
-    image = preprocess(image).unsqueeze(0).to(device)
+    x = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
-        return model.encode_image(image).cpu().numpy().astype(np.float32)
+        feat = model.encode_image(x)
+        feat = feat / feat.norm(dim=-1, keepdim=True)
+    return feat.cpu().numpy().astype(np.float32)
 
 def encode_text(text: str):
-    text = clip.tokenize([text]).to(device)
+    tokens = clip.tokenize([text]).to(device)
     with torch.no_grad():
-        return model.encode_text(text).cpu().numpy().astype(np.float32)
+        feat = model.encode_text(tokens)
+        feat = feat / feat.norm(dim=-1, keepdim=True)
+    return feat.cpu().numpy().astype(np.float32)
 
-def fetch_metadata(ids):
-    """Fetch product metadata in chunks."""
+# Utility: convert L2^2 distance to cosine similarity for normalized vectors
+# For unit vectors: ||a-b||^2 = 2 - 2cos(a,b)  =>  cos = 1 - (d2/2)
+def l2_to_cos(d2: float) -> float:
+    return float(1.0 - (d2 / 2.0))
+
+# --------------------------
+# Metadata fetch (by image_id)
+# --------------------------
+def fetch_metadata_by_image_ids(image_ids: List[Optional[str]]):
+    """Fetch product metadata by image_id in chunks and build lookup keyed by image_id."""
     all_metadata = {}
     chunk_size = 50
-    for i in range(0, len(ids), chunk_size):
-        chunk = [id for id in ids[i:i+chunk_size] if id]
+    for i in range(0, len(image_ids), chunk_size):
+        chunk = [iid for iid in image_ids[i:i+chunk_size] if iid]
         if not chunk:
             continue
         try:
-            resp = supabase.table("product_image_metadata").select("*").in_("variant_id", chunk).execute()
+            resp = supabase.table("product_image_metadata") \
+                .select("*") \
+                .in_("image_id", chunk) \
+                .execute()
             for row in resp.data:
-                all_metadata[row["variant_id"]] = row
+                all_metadata[row["image_id"]] = row
         except APIError as e:
             print(f"❌ Metadata fetch error: {e}")
     return all_metadata
@@ -178,52 +171,104 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
-@app.post("/search/image")
-async def search_image(
-    file: UploadFile = File(...),
+# NEW unified search route to match your frontend's POST /search
+@app.post("/search")
+async def unified_search(
+    file: UploadFile | None = File(default=None),
+    text: Optional[str] = Query(default=None),
     index_type: str = Query("combined"),
-    top_k: int = Query(10),
-    refresh_cache: bool = Query(False)
+    top_k: int = Query(20),
+    threshold: float = Query(0.25),  # currently applied on cosine-like score after conversion
+    refresh_cache: bool = Query(False),
 ):
+    if not file and not (text and text.strip()):
+        raise HTTPException(status_code=400, detail="Either 'file' or 'text' must be provided.")
+
+    # Keyword shortcut only for text queries
+    if not file and text:
+        try:
+            kw = supabase.table("product_image_metadata") \
+                .select("*") \
+                .ilike("variant_name", f"%{text}%") \
+                .limit(top_k) \
+                .execute()
+            if kw.data:
+                results = []
+                for row in kw.data:
+                    results.append({
+                        "image_id": row.get("image_id"),
+                        "image_path": row.get("image_url"),
+                        "score": 1.0,
+                        "variant_id": row.get("variant_id"),
+                        "variant_name": row.get("variant_name"),
+                        "model_number": row.get("model_number"),
+                        "product_id": row.get("product_id"),
+                        "product_name": row.get("product_name"),
+                        "brand_id": row.get("brand_id"),
+                        "brand_name": row.get("brand_name"),
+                        "product_url": row.get("product_url"),
+                        "product_category": row.get("product_category"),
+                    })
+                return {"results": results}
+        except APIError as e:
+            print(f"Keyword search error: {e}")
+
+    # Vector search (image or text)
     index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
 
-    img_bytes = await file.read()
-    image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-    if index_type == "structure":
-        image = image.convert("L").convert("RGB")
+    # Early guard if index is empty
+    if getattr(index, "ntotal", 0) == 0:
+        return {"results": []}
 
-    embedding = encode_image(image)
-    D, I = index.search(embedding, top_k)
-    ids = [id_map.get(str(idx)) for idx in I[0]]
-    metadata = fetch_metadata(ids)
-    return {"ids": ids, "scores": D[0].tolist(), "metadata": metadata}
+    if file:
+        img_bytes = await file.read()
+        image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+        if index_type == "structure":
+            image = image.convert("L").convert("RGB")
+        query_vec = encode_image(image)
+    else:
+        query_vec = encode_text(text.strip())
 
-@app.get("/search/text")
-async def search_text(
-    query: str,
-    index_type: str = Query("combined"),
-    top_k: int = Query(10),
-    refresh_cache: bool = Query(False)
-):
-    # Keyword search first
-    try:
-        keyword_res = supabase.table("product_image_metadata").select("*").ilike("variant_name", f"%{query}%").limit(top_k).execute()
-        if keyword_res.data:
-            return {
-                "ids": [row["variant_id"] for row in keyword_res.data],
-                "scores": [1.0] * len(keyword_res.data),
-                "metadata": {row["variant_id"]: row for row in keyword_res.data}
-            }
-    except APIError as e:
-        print(f"Keyword search error: {e}")
+    # FAISS returns squared L2 distances on normalized vectors
+    D, I = index.search(query_vec, top_k)
 
-    # CLIP fallback
-    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
-    embedding = encode_text(query)
-    D, I = index.search(embedding, top_k)
-    ids = [id_map.get(str(idx)) for idx in I[0]]
-    metadata = fetch_metadata(ids)
-    return {"ids": ids, "scores": D[0].tolist(), "metadata": metadata}
+    # id_map is a LIST; convert indices -> image_ids with bounds checks
+    def idx_to_image_id(ix: int) -> Optional[str]:
+        if 0 <= ix < len(id_map):
+            return id_map[ix]
+        return None
+
+    image_ids = [idx_to_image_id(ix) for ix in I[0]]
+
+    # Fetch metadata and assemble response in the exact shape the frontend expects
+    meta = fetch_metadata_by_image_ids(image_ids)
+    results = []
+    for d2, ix in zip(D[0].tolist(), I[0].tolist()):
+        image_id = idx_to_image_id(ix)
+        if not image_id:
+            continue
+        row = meta.get(image_id)
+        if not row:
+            continue
+        score_cos = l2_to_cos(d2)  # in [-1,1]; typical good matches >= ~0.3+
+        if score_cos < threshold:
+            continue
+        results.append({
+            "image_id": row.get("image_id"),
+            "image_path": row.get("image_url"),
+            "score": score_cos,
+            "variant_id": row.get("variant_id"),
+            "variant_name": row.get("variant_name"),
+            "model_number": row.get("model_number"),
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name"),
+            "brand_id": row.get("brand_id"),
+            "brand_name": row.get("brand_name"),
+            "product_url": row.get("product_url"),
+            "product_category": row.get("product_category"),
+        })
+
+    return {"results": results}
 
 @app.get("/index/types")
 async def list_index_types():
@@ -233,4 +278,3 @@ async def list_index_types():
 @app.get("/")
 async def root():
     return {"message": "FAISS Sharded Search API (dynamic) is running"}
-
