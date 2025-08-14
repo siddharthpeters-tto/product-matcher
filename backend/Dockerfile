@@ -14,7 +14,7 @@ RUN pip install --upgrade pip \
      --extra-index-url https://download.pytorch.org/whl/cpu \
  && pip install -r /tmp/requirements.txt \
  && pip freeze > /tmp/requirements.lock \
- && RUN cat /tmp/requirements.lock
+ && cat /tmp/requirements.lock
 
 
 COPY . /app
