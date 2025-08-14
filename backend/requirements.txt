@@ -1,8 +1,8 @@
 fastapi
 uvicorn
-faiss-cpu
+faiss-cpu==1.7.4
 numpy
-torch
+torch==2.1.2
 Pillow
 requests
 tqdm
