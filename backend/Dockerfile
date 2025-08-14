@@ -1,5 +1,5 @@
-# Start from PyTorch base image (already has torch 2.1.2 installed, CPU only, Python 3.10)
-FROM pytorch/pytorch:2.1.2-cpu-py3.10
+# Start from PyTorch base image (PyTorch 2.1.2, Python 3.10, CPU-only)
+FROM pytorch/pytorch:2.1.2-py3.10-cpu
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,15 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements first to enable Docker layer caching
+# Copy requirements first to enable caching
 COPY requirements.txt /tmp/requirements.txt
 
-# Install dependencies (torch is preinstalled in base image)
+# Install deps (torch already installed in base image)
 RUN pip install --upgrade pip \
  && pip install faiss-cpu==1.7.4 \
  && pip install -r /tmp/requirements.txt
 
-# Copy application code
 COPY . /app
 
 EXPOSE 8000
