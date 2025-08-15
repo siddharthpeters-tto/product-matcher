@@ -5,6 +5,8 @@ import time
 from typing import Dict, List, Optional
 
 import faiss
+import numpy as np
+
 
 # -----------------------------
 # Configuration
@@ -203,7 +205,8 @@ def load_sharded_index(
             raise RuntimeError(f"[faiss_sharding] Shard '{path}' is empty or not found in bucket '{BUCKET}'")
 
         try:
-            sub = faiss.deserialize_index(blob)
+            sub = faiss.deserialize_index(np.frombuffer(blob, dtype=np.uint8))
+            #sub = faiss.deserialize_index(blob)
         except Exception as e:
             raise RuntimeError(f"[faiss_sharding] Failed to deserialize shard '{path}': {e}")
 
