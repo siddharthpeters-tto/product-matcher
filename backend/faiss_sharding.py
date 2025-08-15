@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 
 import faiss
 import numpy as np
+import re
+
 
 
 # -----------------------------
@@ -179,18 +181,43 @@ def load_sharded_index(
 ) -> faiss.Index:
     """Load all shards for an embedding type into a FAISS IndexShards aggregator.
 
-    If no shards exist, returns an empty IndexFlatL2 of expected_dim (or 512).
-    Raises a clear RuntimeError if any shard fails to download/deserialize.
+    - Shards are sorted by shard_id to match build order.
+    - We validate dimensions across shards.
+    - We warn if shard ids are not a contiguous prefix (0..N-1).
+    - If none exist, return empty IndexFlatL2(expected_dim or 512).
     """
     manifest = load_manifest(supabase, embed_type)
     shards_meta: List[dict] = manifest.get("shards", [])
+
     if not shards_meta:
         d = int(expected_dim or 512)
         print(f"[faiss_sharding] No shards for '{embed_type}'. Returning empty IndexFlatL2({d}).")
         return faiss.IndexFlatL2(d)
 
+    # ---- sort shards deterministically by shard_id (build order) ----
+    def _parse_shard_id(s: dict) -> int:
+        if "shard_id" in s and s["shard_id"] is not None:
+            try:
+                return int(s["shard_id"])
+            except Exception:
+                pass
+        # fallback: parse from filename: ..._shard_00012.index
+        m = re.search(r"_shard_(\d+)\.index$", s.get("file", "") or "")
+        return int(m.group(1)) if m else 0
+
+    shards_meta = sorted(shards_meta, key=_parse_shard_id)
+    shard_ids = [ _parse_shard_id(s) for s in shards_meta ]
+
+    # ---- warn unless shard ids are exactly [0, 1, 2, ..., N-1] ----
+    if shard_ids != list(range(len(shard_ids))):
+        print(f"[faiss_sharding] ⚠️ Shards not a 0..N-1 prefix for '{embed_type}': {shard_ids}")
+
+
     sub_indexes: List[faiss.Index] = []
     d_first: Optional[int] = None
+    total_vectors = 0
+    loaded_files: List[str] = []
+
     for s in shards_meta:
         path = s.get("file")
         if not path:
@@ -206,23 +233,40 @@ def load_sharded_index(
 
         try:
             sub = faiss.deserialize_index(np.frombuffer(blob, dtype=np.uint8))
-            #sub = faiss.deserialize_index(blob)
         except Exception as e:
             raise RuntimeError(f"[faiss_sharding] Failed to deserialize shard '{path}': {e}")
 
+        # dimension sanity
         if d_first is None:
             d_first = int(sub.d)
+            if expected_dim is not None and int(expected_dim) != d_first:
+                raise RuntimeError(
+                    f"[faiss_sharding] Dim mismatch for '{embed_type}': expected {expected_dim}, got {d_first}"
+                )
+        else:
+            if int(sub.d) != d_first:
+                raise RuntimeError(
+                    f"[faiss_sharding] Mixed dims across shards for '{embed_type}': {d_first} vs {int(sub.d)}"
+                )
+
         sub_indexes.append(sub)
+        total_vectors += int(getattr(sub, "ntotal", 0))
+        loaded_files.append(path)
 
     d = int(d_first or expected_dim or 512)
 
+    # Aggregate
     try:
         agg = faiss.IndexShards(d, threaded)
     except TypeError:
+        # Older faiss signature: (d, threaded, own_fields)
         agg = faiss.IndexShards(d, threaded, False)
 
     for sub in sub_indexes:
         agg.add_shard(sub)
 
-    print(f"[faiss_sharding] Loaded {len(sub_indexes)} shard(s) for '{embed_type}', dim={d}.")
+    print(
+        f"[faiss_sharding] Loaded {len(sub_indexes)} shard(s) for '{embed_type}', "
+        f"dim={d}, ntotal={getattr(agg, 'ntotal', 0)}; files={loaded_files}"
+    )
     return agg
