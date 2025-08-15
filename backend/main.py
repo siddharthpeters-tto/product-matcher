@@ -221,8 +221,10 @@ async def unified_search(
     try:
         index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
         ntotal = int(getattr(index, "ntotal", 0))
+        # add these 3 lines ↓↓↓
         if len(id_map) != ntotal:
-            print(f"❌ id_map length mismatch: id_map={len(id_map)} ntotal={ntotal}")
+            print(f"⚠️ id_map length {len(id_map)} != ntotal {ntotal} — TRIMMING FOR DEMO")
+            id_map = id_map[:ntotal]
         # ✅ Always clamp top_k after load (even when lengths match)
         top_k = max(1, min(top_k, len(id_map), ntotal))
     except Exception as e:
