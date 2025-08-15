@@ -5,6 +5,7 @@ import time
 import hashlib
 import random
 import string
+import traceback 
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional
 
