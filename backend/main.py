@@ -183,13 +183,14 @@ async def unified_search(
     text: Optional[str] = Query(default=None),
     index_type: str = Query("combined"),
     top_k: int = Query(20),
-    threshold: float = Query(0.25),  # currently applied on cosine-like score after conversion
+    threshold: float = Query(0.25),  # cosine threshold after conversion
     refresh_cache: bool = Query(False),
 ):
     if not file and not (text and text.strip()):
         raise HTTPException(status_code=400, detail="Either 'file' or 'text' must be provided.")
 
-    # Keyword shortcut only for text queries
+    # 1) Collect keyword matches (TEXT ONLY) but do NOT early-return.
+    kw_results = []
     if not file and text:
         try:
             kw = supabase.table("product_image_metadata") \
@@ -198,9 +199,8 @@ async def unified_search(
                 .limit(top_k) \
                 .execute()
             if kw.data:
-                results = []
                 for row in kw.data:
-                    results.append({
+                    kw_results.append({
                         "image_id": row.get("image_id"),
                         "image_path": row.get("image_url"),
                         "score": 1.0,
@@ -214,33 +214,43 @@ async def unified_search(
                         "product_url": row.get("product_url"),
                         "product_category": row.get("product_category"),
                     })
-                return {"results": results}
         except APIError as e:
             print(f"Keyword search error: {e}")
-    # Vector search (image or text)
+
+    # 2) Vector search (image or text)
     try:
         index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
+        ntotal = int(getattr(index, "ntotal", 0))
+        if len(id_map) != ntotal:
+            print(f"❌ id_map length mismatch: id_map={len(id_map)} ntotal={ntotal}")
+        # ✅ Always clamp top_k after load (even when lengths match)
+        top_k = max(1, min(top_k, len(id_map), ntotal))
     except Exception as e:
         print("Index load failed:", e)
         traceback.print_exc()
         raise HTTPException(status_code=503, detail=str(e))
-    # Early guard if index is empty
+
+    # 3) If index is empty, fall back to keyword results for text queries (if any)
     if getattr(index, "ntotal", 0) == 0:
+        if kw_results:
+            return {"results": kw_results}
         return {"results": []}
 
+    # 4) Build query embedding
     if file:
         img_bytes = await file.read()
         image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
         if index_type == "structure":
+            # Keep this ONLY if your structure shards were built on grayscale
             image = image.convert("L").convert("RGB")
         query_vec = encode_image(image)
     else:
         query_vec = encode_text(text.strip())
 
-    # FAISS returns squared L2 distances on normalized vectors
+    # 5) Run FAISS search (L2^2 on normalized vectors)
     D, I = index.search(query_vec, top_k)
 
-    # id_map is a LIST; convert indices -> image_ids with bounds checks
+    # 6) Map row indices -> image_ids with bounds checks
     def idx_to_image_id(ix: int) -> Optional[str]:
         if 0 <= ix < len(id_map):
             return id_map[ix]
@@ -248,7 +258,7 @@ async def unified_search(
 
     image_ids = [idx_to_image_id(ix) for ix in I[0]]
 
-    # Fetch metadata and assemble response in the exact shape the frontend expects
+    # 7) Fetch metadata and assemble vector results
     meta = fetch_metadata_by_image_ids(image_ids)
     results = []
     for d2, ix in zip(D[0].tolist(), I[0].tolist()):
@@ -258,7 +268,7 @@ async def unified_search(
         row = meta.get(image_id)
         if not row:
             continue
-        score_cos = l2_to_cos(d2)  # in [-1,1]; typical good matches >= ~0.3+
+        score_cos = l2_to_cos(d2)  # [-1, 1]; good matches often >= ~0.3+
         if score_cos < threshold:
             continue
         results.append({
@@ -276,6 +286,10 @@ async def unified_search(
             "product_category": row.get("product_category"),
         })
 
+    # 8) Fallback: if vector results are empty after thresholding, return keyword hits (TEXT ONLY)
+    if not results and kw_results:
+        return {"results": kw_results}
+
     return {"results": results}
 
 @app.get("/index/types")
@@ -286,3 +300,106 @@ async def list_index_types():
 @app.get("/")
 async def root():
     return {"message": "FAISS Sharded Search API (dynamic) is running"}
+
+# Drop this into main.py (near other endpoints). Assumes you have:
+# - load_index_mode(index_type: str, refresh_cache: bool=False) -> (faiss.Index, List[str])
+# - supabase client already initialized (not required here)
+#
+# What it does:
+# 1) Verifies len(id_map) == index.ntotal
+# 2) Random round‑trip check: reconstruct vector for random labels and ensure the
+#    top-1 nearest neighbor is the same label (i.e., mapping & add order aligned)
+# 3) Reports average vector norm (to catch missing normalization)
+# 4) Optional: force cache refresh for a cold, clean read of shards
+
+
+
+@app.get("/diag/mapping")
+async def diag_mapping(
+    index_type: str = Query("combined"),
+    sample: int = Query(100, ge=5, le=2000),
+    k: int = Query(1, ge=1, le=10),
+    refresh_cache: bool = Query(False),
+):
+    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
+
+    ntotal = int(getattr(index, "ntotal", 0))
+    problems = []
+
+    # (1) cardinality check
+    cardinality_ok = (len(id_map) == ntotal)
+
+    # (2) sample a set of labels to round-trip through search
+    if ntotal == 0:
+        return {
+            "index_type": index_type,
+            "ntotal": ntotal,
+            "id_map_len": len(id_map),
+            "cardinality_ok": cardinality_ok,
+            "roundtrip_checked": 0,
+            "roundtrip_ok_ratio": 0.0,
+            "avg_norm": None,
+            "problems": ["Empty index"]
+        }
+
+    labels = random.sample(range(ntotal), min(sample, ntotal))
+
+    # compute norms to detect normalization mismatches
+    norms = []
+    ok_count = 0
+    for lbl in labels:
+        try:
+            v = index.reconstruct(lbl)
+        except Exception as e:
+            problems.append(f"reconstruct failed for label {lbl}: {e}")
+            continue
+
+        # norm
+        nrm = float(np.linalg.norm(v))
+        norms.append(nrm)
+
+        # search the same vector back; if mapping/order is correct, top-1 label should be lbl
+        D, I = index.search(v.reshape(1, -1).astype(np.float32), k)
+        top = int(I[0,0]) if I.size > 0 else -1
+        if top == lbl:
+            ok_count += 1
+        else:
+            problems.append(f"roundtrip mismatch: lbl={lbl} -> top={top}")
+
+    roundtrip_ok_ratio = ok_count / max(1, len(labels))
+    avg_norm = float(np.mean(norms)) if norms else None
+
+    return {
+        "index_type": index_type,
+        "ntotal": ntotal,
+        "id_map_len": len(id_map),
+        "cardinality_ok": cardinality_ok,
+        "roundtrip_checked": len(labels),
+        "roundtrip_ok_ratio": roundtrip_ok_ratio,
+        "avg_norm": avg_norm,
+        "cache_refreshed": bool(refresh_cache),
+        "problems": problems[:50],
+    }
+
+# Optional: quick dump of a few neighbor IDs for manual spot checks
+@app.get("/diag/peek")
+async def diag_peek(
+    index_type: str = Query("combined"),
+    idx: int = Query(0, ge=0),
+    k: int = Query(5, ge=1, le=50),
+    refresh_cache: bool = Query(False),
+):
+    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
+    ntotal = int(getattr(index, "ntotal", 0))
+    if ntotal == 0:
+        return {"error": "empty index"}
+    idx = min(idx, ntotal-1)
+    v = index.reconstruct(idx)
+    D, I = index.search(v.reshape(1, -1).astype(np.float32), k)
+    labels = I[0].tolist()
+    uuids = [id_map[l] if 0 <= l < len(id_map) else None for l in labels]
+    return {
+        "query_label": idx,
+        "query_uuid": id_map[idx] if idx < len(id_map) else None,
+        "neighbors": [{"label": int(l), "uuid": u, "score": float(D[0][i])} for i, (l, u) in enumerate(zip(labels, uuids))]
+    }
