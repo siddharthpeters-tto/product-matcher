@@ -231,7 +231,18 @@ def load_sharded_index(
     for s in shards_meta:
         path = s["file"]  # full path within bucket
         blob = supabase.storage.from_(BUCKET).download(path)
-        sub = faiss.deserialize_index(np.frombuffer(blob, dtype=np.uint8))
+        if blob is None:
+            raise RuntimeError(f"Failed to download shard: {path}")
+
+        import tempfile, os
+        tmp_path = os.path.join(tempfile.gettempdir(), os.path.basename(path))
+        with open(tmp_path, "wb") as f:
+            f.write(blob if isinstance(blob, (bytes, bytearray)) else bytes(blob))
+
+        try:
+            sub = faiss.read_index(tmp_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read shard {path}: {e}")
         #sub = faiss.deserialize_index(blob)
         if d_first is None:
             d_first = int(sub.d)
