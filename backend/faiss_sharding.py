@@ -230,7 +230,8 @@ def load_sharded_index(
     for s in shards_meta:
         path = s["file"]  # full path within bucket
         blob = supabase.storage.from_(BUCKET).download(path)
-        sub = faiss.deserialize_index(blob)
+        sub = faiss.deserialize_index(bytearray(blob))
+        #sub = faiss.deserialize_index(blob)
         if d_first is None:
             d_first = int(sub.d)
         sub_indexes.append(sub)
