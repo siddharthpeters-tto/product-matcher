@@ -127,6 +127,21 @@ def load_index_mode(mode: str, refresh_cache: bool = False):
 # --------------------------
 # Encoders (L2-normalized)
 # --------------------------
+
+import faiss  # ensure imported
+
+def _to_cosine_scores(index: faiss.Index, D_row):
+    """
+    Convert FAISS output to cosine similarity in [-1, 1].
+    - If shards were built with IP (your case), D is already cosine.
+    - If (rarely) L2 on unit vectors, convert via cos = 1 - d2/2.
+    """
+    metric = getattr(index, "metric_type", getattr(faiss, "METRIC_INNER_PRODUCT", None))
+    if metric == getattr(faiss, "METRIC_INNER_PRODUCT", None):
+        return [float(x) for x in D_row]
+    else:
+        return [1.0 - float(x) / 2.0]
+
 def encode_image(image: PILImage.Image):
     x = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -261,14 +276,14 @@ async def unified_search(
     # 7) Fetch metadata and assemble vector results
     meta = fetch_metadata_by_image_ids(image_ids)
     results = []
-    for d2, ix in zip(D[0].tolist(), I[0].tolist()):
+    cos_scores = _to_cosine_scores(index, D[0])
+    for ix, score_cos in zip(I[0].tolist(), cos_scores):
         image_id = idx_to_image_id(ix)
         if not image_id:
             continue
         row = meta.get(image_id)
         if not row:
             continue
-        score_cos = l2_to_cos(d2)  # [-1, 1]; good matches often >= ~0.3+
         if score_cos < threshold:
             continue
         results.append({
@@ -285,6 +300,7 @@ async def unified_search(
             "product_url": row.get("product_url"),
             "product_category": row.get("product_category"),
         })
+
 
     # 8) Fallback: if vector results are empty after thresholding, return keyword hits (TEXT ONLY)
     if not results and kw_results:
