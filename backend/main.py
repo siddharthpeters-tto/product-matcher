@@ -191,8 +191,8 @@ app.add_middleware(
 # NEW unified search route to match your frontend's POST /search
 @app.post("/search")
 async def unified_search(
-    file: UploadFile | None = File(default=None),
-    text: Optional[str] = Query(default=None),
+    file: UploadFile = File(None),
+    text: str = Query(None),
     index_type: str = Query("color"),
     top_k: int = Query(20),
     threshold: float = Query(0.25),
