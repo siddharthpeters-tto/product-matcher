@@ -205,11 +205,15 @@ async def unified_search(
     kw_results = []
     if not file and text:
         try:
-            kw = supabase.table("product_image_metadata") \
-                .select("*") \
-                .ilike("variant_name", f"%{text}%") \
-                .limit(top_k) \
-                .execute()
+            t = text.strip().replace("%","")  # simple sanitize
+            kw = (supabase.table("product_image_metadata")
+                .select("*")
+                .or_(f"variant_name.ilike.%{t}%,"
+                    f"product_name.ilike.%{t}%,"
+                    f"brand_name.ilike.%{t}%,"
+                    f"model_number.ilike.%{t}%")
+                .limit(top_k)
+                .execute())
             if kw.data:
                 for row in kw.data:
                     kw_results.append({
