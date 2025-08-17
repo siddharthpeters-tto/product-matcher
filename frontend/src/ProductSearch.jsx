@@ -155,6 +155,19 @@ const fetchResults = async ({ file, text }) => {
             </button>
           </div>
         </div>
+
+      {/* Preview Image */}
+      {imagePreview && (
+        <div className="ml-4 flex flex-col items-center">
+          <label className="block text-gray-700 text-sm font-bold mb-1">Preview:</label>
+          <img
+            src={imagePreview}
+            alt="preview"
+            className="w-24 h-24 object-contain rounded-lg shadow-md"
+          />
+        </div>
+      )}
+
       </section>
 
       <section>
@@ -169,13 +182,6 @@ const fetchResults = async ({ file, text }) => {
           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer range-thumb-indigo"
         />
       </section>
-
-      {imagePreview && (
-        <div className="mb-4">
-          <p className="text-gray-700 text-sm font-bold mb-2">Preview:</p>
-          <img src={imagePreview} alt="preview" className="w-48 h-48 object-contain rounded-lg shadow-md" />
-        </div>
-      )}
 
       {loading && <p className="text-indigo-600 font-medium">🔄 Searching...</p>}
       {message && <p className="text-gray-600 text-sm">{message}</p>}
