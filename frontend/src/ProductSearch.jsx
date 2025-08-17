@@ -124,7 +124,17 @@ const fetchResults = async ({ file, text }) => {
               hover:file:bg-indigo-100"
           />
         </div>
-
+      {/* Preview Image */}
+      {imagePreview && (
+        <div className="ml-4 flex flex-col items-center">
+          <label className="block text-gray-700 text-sm font-bold mb-1">Preview:</label>
+          <img
+            src={imagePreview}
+            alt="preview"
+            className="w-24 h-24 object-contain rounded-lg shadow-md"
+          />
+        </div>
+      )}
         {/* Or Search by Text */}
         <div className="flex-1">
           <label className="block text-gray-700 text-sm font-bold mb-2">
@@ -155,19 +165,6 @@ const fetchResults = async ({ file, text }) => {
             </button>
           </div>
         </div>
-
-      {/* Preview Image */}
-      {imagePreview && (
-        <div className="ml-4 flex flex-col items-center">
-          <label className="block text-gray-700 text-sm font-bold mb-1">Preview:</label>
-          <img
-            src={imagePreview}
-            alt="preview"
-            className="w-24 h-24 object-contain rounded-lg shadow-md"
-          />
-        </div>
-      )}
-
       </section>
 
       <section>
