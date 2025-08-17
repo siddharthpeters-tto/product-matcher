@@ -20,7 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client
 from postgrest.exceptions import APIError
-from faiss_sharding import load_sharded_index
+from modal_faiss_builder.faiss_sharding import load_sharded_index
+
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -61,6 +62,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # In-memory cache
 memory_index_cache: Dict[str, faiss.Index] = {}
 memory_idmap_cache: Dict[str, list] = {}
+ALLOWED_INDEXES = {"color"}
 
 # --------------------------
 # Supabase helpers
@@ -181,7 +183,7 @@ app.add_middleware(
 async def unified_search(
     file: UploadFile | None = File(default=None),
     text: Optional[str] = Query(default=None),
-    index_type: str = Query("combined"),
+    index_type: str = Query("color"),
     top_k: int = Query(20),
     threshold: float = Query(0.25),  # cosine threshold after conversion
     refresh_cache: bool = Query(False),
@@ -217,6 +219,9 @@ async def unified_search(
         except APIError as e:
             print(f"Keyword search error: {e}")
 
+    if index_type not in ALLOWED_INDEXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported index_type '{index_type}'. Allowed: {sorted(ALLOWED_INDEXES)}")
+
     # 2) Vector search (image or text)
     try:
         index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
@@ -242,10 +247,6 @@ async def unified_search(
     if file:
         img_bytes = await file.read()
         image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-        if index_type == "structure":
-            # Keep this ONLY if your structure shards were built on grayscale
-            image = image.convert("L").convert("RGB")
-        query_vec = encode_image(image)
     else:
         query_vec = encode_text(text.strip())
 
@@ -318,7 +319,7 @@ async def root():
 
 @app.get("/diag/mapping")
 async def diag_mapping(
-    index_type: str = Query("combined"),
+    index_type: str = Query("color"),
     sample: int = Query(100, ge=5, le=2000),
     k: int = Query(1, ge=1, le=10),
     refresh_cache: bool = Query(False),
@@ -386,7 +387,7 @@ async def diag_mapping(
 # Optional: quick dump of a few neighbor IDs for manual spot checks
 @app.get("/diag/peek")
 async def diag_peek(
-    index_type: str = Query("combined"),
+    index_type: str = Query("color"),
     idx: int = Query(0, ge=0),
     k: int = Query(5, ge=1, le=50),
     refresh_cache: bool = Query(False),
