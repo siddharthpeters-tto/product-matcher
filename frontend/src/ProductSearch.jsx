@@ -31,9 +31,6 @@ const fetchResults = async ({ file, text }) => {
       return;
     }
 
-    const formData = new FormData();
-    if (file) formData.append("file", file);
-
     const queryParams = new URLSearchParams({
       index_type: indexType,
       threshold: threshold.toString(),
@@ -42,12 +39,18 @@ const fetchResults = async ({ file, text }) => {
 
     const endpoint = `${API_URL}?${queryParams.toString()}`;
 
-    const res = await fetch(endpoint, {
-      method: "POST",
-      body: formData,
-    });
+    let fetchOptions = { method: "POST" };
 
+    if (file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      fetchOptions.body = formData;
+    }
+    // ✅ If no file, leave body undefined (empty POST)
+
+    const res = await fetch(endpoint, fetchOptions);
     const data = await res.json();
+
     if (res.ok) {
       if (data.results?.length > 0) {
         setResults(data.results);
@@ -55,10 +58,7 @@ const fetchResults = async ({ file, text }) => {
         const grouped = data.results.reduce((acc, item) => {
           const key = item.variant_id;
           if (!acc[key]) {
-            acc[key] = {
-              ...item,
-              images: []
-            };
+            acc[key] = { ...item, images: [] };
           }
           acc[key].images.push({
             image_id: item.image_id,
@@ -67,7 +67,6 @@ const fetchResults = async ({ file, text }) => {
           });
           return acc;
         }, {});
-
         setGroupedResults(Object.values(grouped));
         setMessage(`Found ${data.results.length} matches.`);
       } else {
@@ -76,7 +75,6 @@ const fetchResults = async ({ file, text }) => {
         setMessage("No matching products found above the threshold.");
       }
     }
-
   } catch (err) {
     setMessage("Search error: " + err.message);
     console.error("Search error:", err);
@@ -84,6 +82,7 @@ const fetchResults = async ({ file, text }) => {
     setLoading(false);
   }
 };
+
 
 
 

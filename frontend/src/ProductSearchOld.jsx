@@ -39,17 +39,14 @@ const fetchResults = async ({ file, text }) => {
 
     const endpoint = `${API_URL}?${queryParams.toString()}`;
 
-    // ✅ conditionally set body + headers
     let fetchOptions = { method: "POST" };
 
     if (file) {
       const formData = new FormData();
       formData.append("file", file);
       fetchOptions.body = formData;
-    } else {
-      fetchOptions.headers = { "Content-Type": "application/json" };
-      fetchOptions.body = JSON.stringify({});
     }
+    // text-only: no body at all
 
     const res = await fetch(endpoint, fetchOptions);
     const data = await res.json();
@@ -85,6 +82,7 @@ const fetchResults = async ({ file, text }) => {
     setLoading(false);
   }
 };
+
 
 
 
