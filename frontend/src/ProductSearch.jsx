@@ -14,20 +14,8 @@ export default function ProductSearch() {
   const [imagePreview, setImagePreview] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [searchText, setSearchText] = useState("");
-  const [indexType, setIndexType] = useState("combined");
+  const [indexType] = useState("color");
   const [message, setMessage] = useState(""); // For user messages/errors
-
-  // Effect to trigger search when indexType changes if there's already input
-  useEffect(() => {
-    if (uploadedFile) {
-      fetchResults({ file: uploadedFile });
-    } else if (searchText.trim()) {
-      fetchResults({ text: searchText.trim() });
-    } else {
-      // Do not call fetchResults at all
-      setMessage("Please upload an image or enter text before switching search mode.");
-    }
-  }, [indexType]);
 
 
 const fetchResults = async ({ file, text }) => {
@@ -120,24 +108,6 @@ const fetchResults = async ({ file, text }) => {
 
   return (
     <div className="space-y-6">
-      <section>
-        <label className="block text-gray-700 text-sm font-bold mb-2">Search Mode:</label>
-        <div className="flex items-center space-x-4">
-          <label className="inline-flex items-center">
-            <input type="radio" value="color" checked={indexType === "color"} onChange={e => setIndexType(e.target.value)} className="form-radio text-indigo-600" />
-            <span className="ml-2 text-gray-700">Color</span>
-          </label>
-          <label className="inline-flex items-center">
-            <input type="radio" value="structure" checked={indexType === "structure"} onChange={e => setIndexType(e.target.value)} className="form-radio text-indigo-600" />
-            <span className="ml-2 text-gray-700">Structure</span>
-          </label>
-          <label className="inline-flex items-center">
-            <input type="radio" value="combined" checked={indexType === "combined"} onChange={e => setIndexType(e.target.value)} className="form-radio text-indigo-600" />
-            <span className="ml-2 text-gray-700">Combined</span>
-          </label>
-        </div>
-      </section>
-
       <section>
         <label className="block text-gray-700 text-sm font-bold mb-2">Upload Image:</label>
         <input type="file" accept="image/*" onChange={handleUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
