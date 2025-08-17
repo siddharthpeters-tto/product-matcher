@@ -113,25 +113,53 @@ const fetchResults = async ({ file, text }) => {
         <input type="file" accept="image/*" onChange={handleUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
       </section>
 
-      <section>
-        <label className="block text-gray-700 text-sm font-bold mb-2">Or Search by Text:</label>
-        <div className="flex space-x-2">
+      <section className="flex flex-col sm:flex-row sm:items-end sm:space-x-4">
+        {/* Upload Image */}
+        <div className="flex-1">
+          <label className="block text-gray-700 text-sm font-bold mb-2">
+            Upload Image:
+          </label>
           <input
-            type="text"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleTextSearch();
-              }
-            }}
-            placeholder="e.g., Scandinavian wooden chair"
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            type="file"
+            accept="image/*"
+            onChange={handleUpload}
+            className="block w-full text-sm text-gray-500 
+              file:mr-4 file:py-2 file:px-4 file:rounded-md 
+              file:border-0 file:text-sm file:font-semibold 
+              file:bg-indigo-50 file:text-indigo-700 
+              hover:file:bg-indigo-100"
           />
-          <button onClick={handleTextSearch} className="px-5 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
-            Search
-          </button>
+        </div>
+
+        {/* Or Search by Text */}
+        <div className="flex-1">
+          <label className="block text-gray-700 text-sm font-bold mb-2">
+            Or Search by Text:
+          </label>
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleTextSearch();
+                }
+              }}
+              placeholder="e.g., Scandinavian wooden chair"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md 
+                focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              onClick={handleTextSearch}
+              className="px-5 py-2 bg-indigo-600 text-white font-semibold rounded-md 
+                hover:bg-indigo-700 focus:outline-none 
+                focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              Search
+            </button>
+          </div>
         </div>
       </section>
 
