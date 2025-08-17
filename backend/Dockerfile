@@ -16,7 +16,6 @@ RUN pip install --upgrade pip \
  && pip freeze > /tmp/requirements.lock \
  && cat /tmp/requirements.lock
 
-COPY modal_faiss_builder /app/modal_faiss_builder
 COPY . /app
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

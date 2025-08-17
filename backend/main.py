@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client
 from postgrest.exceptions import APIError
-from modal_faiss_builder.faiss_sharding import load_sharded_index
+from faiss_sharding import load_sharded_index
 
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -141,11 +141,6 @@ def encode_text(text: str):
         feat = feat / feat.norm(dim=-1, keepdim=True)
     return feat.cpu().numpy().astype(np.float32)
 
-# Utility: convert L2^2 distance to cosine similarity for normalized vectors
-# For unit vectors: ||a-b||^2 = 2 - 2cos(a,b)  =>  cos = 1 - (d2/2)
-def l2_to_cos(d2: float) -> float:
-    return float(1.0 - (d2 / 2.0))
-
 # --------------------------
 # Metadata fetch (by image_id)
 # --------------------------
@@ -247,8 +242,10 @@ async def unified_search(
     if file:
         img_bytes = await file.read()
         image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+        query_vec = encode_image(image)          # ← ADD THIS LINE
     else:
         query_vec = encode_text(text.strip())
+
 
     # 5) Run FAISS search (L2^2 on normalized vectors)
     D, I = index.search(query_vec, top_k)
