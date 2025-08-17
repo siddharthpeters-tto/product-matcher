@@ -195,7 +195,7 @@ async def unified_search(
     text: Optional[str] = Query(default=None),
     index_type: str = Query("color"),
     top_k: int = Query(20),
-    threshold: float = Query(0.25),  # cosine threshold after conversion
+    threshold: float = Query(0.25),
     refresh_cache: bool = Query(False),
 ):
     if not file and not (text and text.strip()):
