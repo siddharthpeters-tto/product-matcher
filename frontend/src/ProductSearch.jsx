@@ -113,28 +113,28 @@ const fetchResults = async ({ file, text }) => {
           <label className="block text-gray-700 text-sm font-bold mb-2">
             Upload Image:
           </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleUpload}
-            className="block w-full text-sm text-gray-500 
-              file:mr-4 file:py-2 file:px-4 file:rounded-md 
-              file:border-0 file:text-sm file:font-semibold 
-              file:bg-indigo-50 file:text-indigo-700 
-              hover:file:bg-indigo-100"
-          />
+          <div className="flex items-center space-x-3">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleUpload}
+              className="block text-sm text-gray-500 
+                file:mr-4 file:py-2 file:px-4 file:rounded-md 
+                file:border-0 file:text-sm file:font-semibold 
+                file:bg-indigo-50 file:text-indigo-700 
+                hover:file:bg-indigo-100"
+            />
+            {imagePreview && (
+              <div className="flex flex-col items-center">
+                <img
+                  src={imagePreview}
+                  alt="preview"
+                  className="w-16 h-16 object-contain rounded-lg shadow-md"
+                />
+              </div>
+            )}
+          </div>
         </div>
-      {/* Preview Image */}
-      {imagePreview && (
-        <div className="ml-4 flex flex-col items-center">
-          <label className="block text-gray-700 text-sm font-bold mb-1">Preview:</label>
-          <img
-            src={imagePreview}
-            alt="preview"
-            className="w-24 h-24 object-contain rounded-lg shadow-md"
-          />
-        </div>
-      )}
         {/* Or Search by Text */}
         <div className="flex-1">
           <label className="block text-gray-700 text-sm font-bold mb-2">
