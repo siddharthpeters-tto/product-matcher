@@ -184,8 +184,7 @@ def fetch_metadata_by_image_ids(image_ids: List[Optional[str]]):
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "https://your-frontend-domain")],
-    allow_credentials=True, allow_methods=["POST","GET"], allow_headers=["*"]
+    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
 # NEW unified search route to match your frontend's POST /search
