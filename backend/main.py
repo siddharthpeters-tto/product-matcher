@@ -40,15 +40,12 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 clip_dim = model.encode_image(torch.zeros((1, 3, 224, 224)).to(device)).shape[1]
 print(f"✅ CLIP model loaded, embedding dim: {clip_dim}")
 
-SUPABASE_URL = "https://rffqzfdzosambdxmpuac.supabase.co/"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjEyNDIyOCwiZXhwIjoyMDY3NzAwMjI4fQ.Lsu2SmeJFL_LWTdUtIoNWrKABVxoPl91i4tpulF4UbA"
-import requests
-print("Testing Supabase connectivity...")
-resp = requests.get(SUPABASE_URL + "/auth/v1")
-print("Status:", resp.status_code)
-print(f"Final SUPABASE_URL: '{SUPABASE_URL}'")
-print(f"Final SUPABASE_KEY length: {len(SUPABASE_KEY)}")
-print(f"First 20 chars of key: {SUPABASE_KEY[:20]}")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+# Use anon key for public, read-only access guarded by RLS.
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY in env.")
+
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 print("✅ Supabase client initialized")
@@ -185,7 +182,8 @@ def fetch_metadata_by_image_ids(image_ids: List[Optional[str]]):
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
+    allow_origins=[os.getenv("ALLOWED_ORIGIN", "https://your-frontend-domain")],
+    allow_credentials=True, allow_methods=["POST","GET"], allow_headers=["*"]
 )
 
 # NEW unified search route to match your frontend's POST /search
@@ -320,106 +318,3 @@ async def list_index_types():
 @app.get("/")
 async def root():
     return {"message": "FAISS Sharded Search API (dynamic) is running"}
-
-# Drop this into main.py (near other endpoints). Assumes you have:
-# - load_index_mode(index_type: str, refresh_cache: bool=False) -> (faiss.Index, List[str])
-# - supabase client already initialized (not required here)
-#
-# What it does:
-# 1) Verifies len(id_map) == index.ntotal
-# 2) Random round‑trip check: reconstruct vector for random labels and ensure the
-#    top-1 nearest neighbor is the same label (i.e., mapping & add order aligned)
-# 3) Reports average vector norm (to catch missing normalization)
-# 4) Optional: force cache refresh for a cold, clean read of shards
-
-
-
-@app.get("/diag/mapping")
-async def diag_mapping(
-    index_type: str = Query("color"),
-    sample: int = Query(100, ge=5, le=2000),
-    k: int = Query(1, ge=1, le=10),
-    refresh_cache: bool = Query(False),
-):
-    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
-
-    ntotal = int(getattr(index, "ntotal", 0))
-    problems = []
-
-    # (1) cardinality check
-    cardinality_ok = (len(id_map) == ntotal)
-
-    # (2) sample a set of labels to round-trip through search
-    if ntotal == 0:
-        return {
-            "index_type": index_type,
-            "ntotal": ntotal,
-            "id_map_len": len(id_map),
-            "cardinality_ok": cardinality_ok,
-            "roundtrip_checked": 0,
-            "roundtrip_ok_ratio": 0.0,
-            "avg_norm": None,
-            "problems": ["Empty index"]
-        }
-
-    labels = random.sample(range(ntotal), min(sample, ntotal))
-
-    # compute norms to detect normalization mismatches
-    norms = []
-    ok_count = 0
-    for lbl in labels:
-        try:
-            v = index.reconstruct(lbl)
-        except Exception as e:
-            problems.append(f"reconstruct failed for label {lbl}: {e}")
-            continue
-
-        # norm
-        nrm = float(np.linalg.norm(v))
-        norms.append(nrm)
-
-        # search the same vector back; if mapping/order is correct, top-1 label should be lbl
-        D, I = index.search(v.reshape(1, -1).astype(np.float32), k)
-        top = int(I[0,0]) if I.size > 0 else -1
-        if top == lbl:
-            ok_count += 1
-        else:
-            problems.append(f"roundtrip mismatch: lbl={lbl} -> top={top}")
-
-    roundtrip_ok_ratio = ok_count / max(1, len(labels))
-    avg_norm = float(np.mean(norms)) if norms else None
-
-    return {
-        "index_type": index_type,
-        "ntotal": ntotal,
-        "id_map_len": len(id_map),
-        "cardinality_ok": cardinality_ok,
-        "roundtrip_checked": len(labels),
-        "roundtrip_ok_ratio": roundtrip_ok_ratio,
-        "avg_norm": avg_norm,
-        "cache_refreshed": bool(refresh_cache),
-        "problems": problems[:50],
-    }
-
-# Optional: quick dump of a few neighbor IDs for manual spot checks
-@app.get("/diag/peek")
-async def diag_peek(
-    index_type: str = Query("color"),
-    idx: int = Query(0, ge=0),
-    k: int = Query(5, ge=1, le=50),
-    refresh_cache: bool = Query(False),
-):
-    index, id_map = load_index_mode(index_type, refresh_cache=refresh_cache)
-    ntotal = int(getattr(index, "ntotal", 0))
-    if ntotal == 0:
-        return {"error": "empty index"}
-    idx = min(idx, ntotal-1)
-    v = index.reconstruct(idx)
-    D, I = index.search(v.reshape(1, -1).astype(np.float32), k)
-    labels = I[0].tolist()
-    uuids = [id_map[l] if 0 <= l < len(id_map) else None for l in labels]
-    return {
-        "query_label": idx,
-        "query_uuid": id_map[idx] if idx < len(id_map) else None,
-        "neighbors": [{"label": int(l), "uuid": u, "score": float(D[0][i])} for i, (l, u) in enumerate(zip(labels, uuids))]
-    }
