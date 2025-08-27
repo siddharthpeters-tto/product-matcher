@@ -97,7 +97,6 @@ async def search(
                 "query_embedding": qvec,
                 "match_count": int(top_k),
                 "threshold": float(threshold),
-                "ef": int(ef),
                 },
             ).execute()
             duration = (time.perf_counter() - start) * 1000  # ms
