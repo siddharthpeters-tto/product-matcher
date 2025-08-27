@@ -15,7 +15,7 @@ from PIL import Image as PILImage
 # --------------------------
 load_dotenv()
 SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
-SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTY2NTUxNiwiZXhwIjoyMDcxMjQxNTE2fQ.l9wlyn_1_GE4TTdQADbbdlZcn-EKZjb0hnwhnTvOGlY"
+SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2NjU1MTYsImV4cCI6MjA3MTI0MTUxNn0.bNj0M4SwVT0SVRVCFarBJLtBS-nYrSM7ZsZ_nGsMR5U"
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY in env")
 
@@ -109,21 +109,17 @@ async def search(
         {
             "image_id": r.get("image_id"),
             "image_url": r.get("image_url"),
+            "image_path": r.get("image_url"),  # alias for frontend compatibility
             "score": r.get("similarity"),  # cosine similarity in [0,1]
-            "variant": {
-                "id": r.get("product_variant_id"),
-                "name": r.get("variant_name"),
-                "model_number": r.get("model_number"),
-                "product_url": r.get("product_url"),
-            },
-            "product": {
-                "id": r.get("product_id"),
-                "name": r.get("product_name"),
-            },
-            "brand": {
-                "id": r.get("brand_id"),
-                "name": r.get("brand_name"),
-            },
+            "variant_id": r.get("product_variant_id"),
+            "variant_name": r.get("variant_name"),
+            "model_number": r.get("model_number"),
+            "product_url": r.get("product_url"),
+            "product_id": r.get("product_id"),
+            "product_name": r.get("product_name"),
+            "brand_id": r.get("brand_id"),
+            "brand_name": r.get("brand_name"),
+            "product_category": r.get("product_category"),
         }
         for r in rows
     ]
