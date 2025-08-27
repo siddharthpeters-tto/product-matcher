@@ -77,36 +77,79 @@ async def search(
     if not file and not (text and text.strip()):
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
 
-    # Build query embedding (512-dim, L2-normalized)
+    rows = []
+
+    # ------------------
+    # Image search ONLY → vector RPC
+    # ------------------
     if file is not None:
         try:
             img = PILImage.open(io.BytesIO(await file.read())).convert("RGB")
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid image upload")
         qvec = encode_image(img)[0].tolist()
+
+        try:
+            start = time.perf_counter()
+            resp = supabase.rpc(
+                "match_product_images",
+                {"query_embedding": qvec, "match_count": int(top_k), "threshold": float(threshold)},
+            ).execute()
+            duration = (time.perf_counter() - start) * 1000  # ms
+            print(f"RPC/vector (image) took {duration:.2f} ms for top_k={top_k}, threshold={threshold}")
+            rows = resp.data or []
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Vector search failed: {e}")
+
+    # ------------------
+    # Text search → HYBRID (vector + keyword RPC)
+    # ------------------
     else:
         qvec = encode_text(text.strip())[0].tolist()
 
-    # Vector search via RPC (uses existing HNSW index on product_images.embedding)
-    try:
-        start = time.perf_counter()
-        resp = supabase.rpc(
-            "match_product_images",
-            {
-                "query_embedding": qvec,
-                "match_count": int(top_k),
-                "threshold": float(threshold),
-            },
-        ).execute()
-        duration = (time.perf_counter() - start) * 1000  # ms
-        print(f"RPC call took {duration:.2f} ms for top_k={top_k}, threshold={threshold}")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Vector search failed: {e}")
+        # Vector RPC
+        vec_rows = []
+        try:
+            start = time.perf_counter()
+            vresp = supabase.rpc(
+                "match_product_images",
+                {"query_embedding": qvec, "match_count": int(top_k), "threshold": float(threshold)},
+            ).execute()
+            vdur = (time.perf_counter() - start) * 1000
+            print(f"RPC/vector (text) took {vdur:.2f} ms for top_k={top_k}, threshold={threshold}")
+            vec_rows = vresp.data or []
+        except Exception as e:
+            print("Vector RPC failed:", e)
 
-    rows = resp.data or []
+        # Keyword RPC
+        kw_rows = []
+        try:
+            start = time.perf_counter()
+            kresp = supabase.rpc(
+                "keyword_match_product_images",
+                {"q": text.strip(), "match_count": int(top_k)},
+            ).execute()
+            kdur = (time.perf_counter() - start) * 1000
+            print(f"RPC/keyword took {kdur:.2f} ms for top_k={top_k}")
+            kw_rows = kresp.data or []
+        except Exception as e:
+            print("Keyword RPC failed:", e)
+
+        # Merge & dedupe by image_id (prefer vector entry if duplicate)
+        by_id = {}
+        for r in vec_rows:
+            by_id[r.get("image_id")] = r
+        for r in kw_rows:
+            _id = r.get("image_id")
+            if _id not in by_id:
+                # optional: bump similarity so keyword-only hits float up
+                r["similarity"] = max(0.99, float(r.get("similarity") or 0))
+                by_id[_id] = r
+        rows = list(by_id.values())
+
     # Normalize output structure for frontend
-    results = [
-        {
+    def map_row(r: dict) -> dict:
+        return {
             "image_id": r.get("image_id"),
             "image_url": r.get("image_url"),
             "image_path": r.get("image_url"),  # alias for frontend compatibility
@@ -121,7 +164,11 @@ async def search(
             "brand_name": r.get("brand_name"),
             "product_category": r.get("product_category"),
         }
-        for r in rows
-    ]
 
-    return {"count": len(results), "results": results, "rpc_time_ms": duration}
+    results = [map_row(r) for r in rows]
+
+    # Optional: sort by score desc after merging (text path)
+    results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+
+    # Return with timing not kept across both branches; could be added if needed
+    return {"count": len(results), "results": results}
