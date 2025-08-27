@@ -1,4 +1,4 @@
-import os, io
+import os, io, time
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -89,6 +89,7 @@ async def search(
 
     # Vector search via RPC (uses existing HNSW index on product_images.embedding)
     try:
+        start = time.perf_counter()
         resp = supabase.rpc(
             "match_product_images",
             {
@@ -97,6 +98,8 @@ async def search(
                 "threshold": float(threshold),
             },
         ).execute()
+        duration = (time.perf_counter() - start) * 1000  # ms
+        print(f"RPC call took {duration:.2f} ms for top_k={top_k}, threshold={threshold}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Vector search failed: {e}")
 
@@ -125,4 +128,4 @@ async def search(
         for r in rows
     ]
 
-    return {"count": len(results), "results": results}
+    return {"count": len(results), "results": results, "rpc_time_ms": duration}
