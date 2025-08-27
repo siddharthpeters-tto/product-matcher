@@ -93,7 +93,12 @@ async def search(
             start = time.perf_counter()
             resp = supabase.rpc(
                 "match_product_images",
-                {"query_embedding": qvec, "match_count": int(top_k), "threshold": float(threshold), "ef": 32},
+                {
+                "query_embedding": qvec,
+                "match_count": int(top_k),
+                "threshold": float(threshold),
+                "ef": int(ef),
+                },
             ).execute()
             duration = (time.perf_counter() - start) * 1000  # ms
             print(f"RPC/vector (image) took {duration:.2f} ms for top_k={top_k}, threshold={threshold}")
