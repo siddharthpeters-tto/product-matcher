@@ -14,8 +14,8 @@ from PIL import Image as PILImage
 # Env & Clients
 # --------------------------
 load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "")  # read-only key behind RLS
+SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
+SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTY2NTUxNiwiZXhwIjoyMDcxMjQxNTE2fQ.l9wlyn_1_GE4TTdQADbbdlZcn-EKZjb0hnwhnTvOGlY"
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY in env")
 
