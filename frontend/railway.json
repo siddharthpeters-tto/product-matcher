@@ -1,5 +1,4 @@
 {
-  "buildCommand": "npm install && npx parcel build src/index.html --dist-dir build --public-url ./",
+  "buildCommand": "npm install && NODE_ENV=production npx parcel build src/index.html --dist-dir build --public-url ./",
   "startCommand": "npx serve build"
 }
-
