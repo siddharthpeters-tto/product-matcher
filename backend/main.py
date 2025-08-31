@@ -29,7 +29,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
 # --------- BG removal session (reused) ---------
-_rm_session = new_session("birefnet-general-lite")  # NEW
+try:
+    _rm_session = new_session("birefnet-general-lite")
+    print("✅ Using birefnet-general-lite for background removal")
+except Exception as e:
+    print(f"⚠️ Failed to load birefnet-general-lite ({e}), falling back to u2net")
+    _rm_session = new_session("u2net")
+
 
 def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
     # rembg may return RGBA; flatten to RGB so JPEG saves/embeds cleanly
