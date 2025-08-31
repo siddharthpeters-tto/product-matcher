@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from "react";
-import Cropper from "react-easy-crop";
+import React, { useState, useRef } from "react";
 import getCroppedImg from "./CropImage";
+import BoxCropper from "./BoxCropper";
 
 const API_URL = "https://product-matcher-production-dc50.up.railway.app/search";
 
@@ -12,18 +12,13 @@ export default function ProductSearch() {
   const [imagePreview, setImagePreview] = useState(null);
   const [searchText, setSearchText] = useState("");
   const [message, setMessage] = useState("");
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const fileInputRef = useRef(null);
 
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [showCropper, setShowCropper] = useState(false);
   const [lastCropURL, setLastCropURL] = useState(null);
 
   const [searchMode, setSearchMode] = useState("direct"); // direct | lens
-
-  const onCropComplete = useCallback((_, areaPixels) => {
-    setCroppedAreaPixels(areaPixels);
-  }, []);
 
   const fetchResults = async ({ file, text }) => {
     setLoading(true);
@@ -78,44 +73,84 @@ export default function ProductSearch() {
     }
   };
 
-const handleUpload = (file) => {
-  if (file) {
-    const url = URL.createObjectURL(file);   // 👈 add this
-    setImagePreview(url);
-    setLastCropURL(null);
-
-    if (searchMode === "lens") {
-      setShowCropper(true);
-    } else {
-      setLastCropURL(url);                   // 👈 add this
-      fetchResults({ file });
-    }
+const handleUpload = (eOrFile) => {
+  const file = eOrFile?.target ? eOrFile.target.files?.[0] : eOrFile;
+  if (lastCropURL) URL.revokeObjectURL(lastCropURL);
+  if (imagePreview) URL.revokeObjectURL(imagePreview);
+  if (!file) {
+    // clear the input in case user cancelled
+    if (eOrFile?.target) eOrFile.target.value = "";
+    return;
   }
+
+  setUploadedFile(file);
+  const url = URL.createObjectURL(file);
+  setImagePreview(url);
+  setMessage("");
+
+  if (searchMode === "lens") {
+    setLastCropURL(null);
+    setShowCropper(true);
+  } else {
+    setLastCropURL(url);
+    setLoading(true);
+    fetchResults({ file });
+  }
+
+  // IMPORTANT: allow the same file to be picked again later
+  if (eOrFile?.target) eOrFile.target.value = "";
 };
 
 
-  const handleCropDone = async () => {
-    try {
-      if (!croppedAreaPixels) return;
-      const blob = await getCroppedImg(imagePreview, croppedAreaPixels);
-      const url = URL.createObjectURL(blob);
-      setLastCropURL(url);
-      setShowCropper(false);
-      await fetchResults({ file: new File([blob], "crop.jpg", { type: "image/jpeg" }) });
-    } catch (e) {
-      setMessage("Crop failed: " + (e?.message || e));
-    }
-  };
+const handleTextSearch = () => {
+  setLastCropURL(null);
+  setImagePreview(null);
+  fetchResults({ text: searchText });
+};
 
-  const handleReset = () => {
-    setImagePreview(null);
-    setLastCropURL(null);
-    setResults([]);
-    setGroupedResults([]);
-    setMessage("");
+const handleCropDone = async (px) => {
+  try {
+    if (!px || !uploadedFile) return;
+
+    // Prefer the existing preview URL; fall back to a temp URL only if needed
+    let sourceURL = imagePreview;
+    let createdTemp = false;
+    if (!sourceURL) {
+      sourceURL = URL.createObjectURL(uploadedFile);
+      createdTemp = true;
+    }
+
+    const blob = await getCroppedImg(sourceURL, px);
+    if (createdTemp && sourceURL.startsWith("blob:")) URL.revokeObjectURL(sourceURL);
+
+    const url = URL.createObjectURL(blob);
+    if (lastCropURL) URL.revokeObjectURL(lastCropURL);
+    setLastCropURL(url);       // <- you see exactly what is being searched
     setShowCropper(false);
-    setSearchText("");        // 👈 add this
-    };
+    setLoading(true);
+
+    await fetchResults({
+      file: new File([blob], uploadedFile.name || "crop.jpg", { type: "image/jpeg" }),
+    });
+  } catch (e) {
+    setLoading(false);
+    setMessage("Crop failed: " + (e?.message || e));
+  }
+};
+
+const handleReset = () => {
+  if (lastCropURL) URL.revokeObjectURL(lastCropURL);
+  if (imagePreview) URL.revokeObjectURL(imagePreview);
+  setImagePreview(null);
+  setLastCropURL(null);
+  setResults([]);
+  setGroupedResults([]);
+  setMessage("");
+  setShowCropper(false);
+  setSearchText("");
+  setUploadedFile(null);
+  if (fileInputRef.current) fileInputRef.current.value = "";
+};
 
 
   return (
@@ -123,11 +158,11 @@ const handleUpload = (file) => {
         <div className="flex justify-center space-x-6">
         <label className="flex items-center space-x-2">
             <input type="radio" value="direct" checked={searchMode === "direct"} onChange={(e) => setSearchMode(e.target.value)} />
-            <span>Match Product</span>
+            <span>Product</span>
         </label>
         <label className="flex items-center space-x-2">
             <input type="radio" value="lens" checked={searchMode === "lens"} onChange={(e) => setSearchMode(e.target.value)} />
-            <span>Match Product in a Scene</span>
+            <span>Scene</span>
         </label>
 
         {/* Add Clear here */}
@@ -140,43 +175,53 @@ const handleUpload = (file) => {
             </button>
         )}
         </div>
-
-
-      {/* Upload */}
-      {!showCropper && !lastCropURL && (
-        <div className="border-2 border-dashed border-gray-300 p-8 rounded-xl text-center cursor-pointer hover:bg-gray-50" onClick={() => document.getElementById("fileInput").click()}>
-          <p className="text-gray-500">Drag & drop or click to upload</p>
-          <input id="fileInput" type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files[0])} />
+      
+      {!showCropper && lastCropURL && (
+        <div className="relative w-full h-80 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+          <img src={lastCropURL} alt="Selected region"
+              className="absolute inset-0 w-full h-full object-contain" />
+          {loading && (
+            <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center">
+              <span className="text-indigo-700 font-semibold">Searching…</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Cropped preview */}
-      {!showCropper && lastCropURL && (
-        <div className="flex flex-col items-center">
-          <img src={lastCropURL} alt="Cropped Preview" className="max-h-80 rounded-lg border" />
-          {loading && <p className="text-indigo-600 font-medium mt-2">🔄 Searching...</p>}
+      {/* Upload */}
+      {!showCropper && !lastCropURL && (
+        <div className="border-2 border-dashed border-gray-300 p-8 rounded-xl text-center cursor-pointer hover:bg-gray-50"
+            onClick={() => document.getElementById("fileInput").click()}>
+          <p className="text-gray-500">Drag & drop or click to upload</p>
+          <input
+            id="fileInput"
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleUpload}
+          />
         </div>
       )}
 
       {/* Cropper */}
-      {showCropper && imagePreview && (
-        <div className="relative w-full h-96 bg-black rounded-lg overflow-hidden">
-          <Cropper image={imagePreview} crop={crop} zoom={zoom} onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={onCropComplete} />
-          <div className="absolute bottom-4 left-4 right-4 flex items-center space-x-4">
-            <div className="flex-1 flex items-center space-x-3 bg-white/80 backdrop-blur rounded-lg px-3 py-2 shadow">
-              <span className="text-xs text-gray-700 whitespace-nowrap">Zoom</span>
-              <input type="range" min={1} max={4} step={0.05} value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))} className="w-full" />
-            </div>
-            <button onClick={handleCropDone} className="bg-indigo-600 text-white px-6 py-2 rounded-lg shadow hover:bg-indigo-700">✅ Use This Crop</button>
-            <button onClick={() => setShowCropper(false)} className="bg-gray-500 text-white px-6 py-2 rounded-lg shadow hover:bg-gray-600">Cancel</button>
+        {showCropper && imagePreview && (
+          <div className="relative w-full h-96 bg-black rounded-lg overflow-hidden">
+            <BoxCropper
+              src={imagePreview}
+              onConfirm={(px) => handleCropDone(px)}
+              onCancel={() => setShowCropper(false)}
+            />
           </div>
-        </div>
-      )}
+        )}
+
 
       {/* Text Search */}
       <div className="flex space-x-2">
         <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="e.g., Scandinavian wooden chair" className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-        <button onClick={() => fetchResults({ text: searchText })} className="px-5 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700">Search</button>
+        <button 
+          onClick={handleTextSearch} disabled={loading} className={`px-5 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 ${loading ? "opacity-60 cursor-not-allowed" : ""}`}>{loading ? "Searching…" : "Search"}
+        </button>
       </div>
 
       {/* Threshold */}

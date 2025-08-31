@@ -20,7 +20,10 @@ export default function ProductSearch() {
 
   const [searchMode, setSearchMode] = useState("direct"); // direct | lens
 
-  const fetchResults = async ({ file, text }) => {
+  // NEW: remember if BG removal was used, purely for UI state
+  const [removeBgUsed, setRemoveBgUsed] = useState(false); // <— NEW
+
+  const fetchResults = async ({ file, text, removeBgFlag = false }) => { // <— CHANGED
     setLoading(true);
     setResults([]);
     setMessage("");
@@ -36,6 +39,7 @@ export default function ProductSearch() {
         threshold: threshold.toString(),
       });
       if (text) queryParams.append("text", text.trim());
+      if (removeBgFlag) queryParams.append("remove_bg", "1"); // <— NEW
 
       const endpoint = `${API_URL}?${queryParams.toString()}`;
       const fetchOptions = { method: "POST" };
@@ -128,9 +132,12 @@ const handleCropDone = async (px) => {
     setLastCropURL(url);       // <- you see exactly what is being searched
     setShowCropper(false);
     setLoading(true);
+    setRemoveBgUsed(false);       // reset flag on a fresh crop  // <— NEW
+
 
     await fetchResults({
       file: new File([blob], uploadedFile.name || "crop.jpg", { type: "image/jpeg" }),
+      removeBgFlag: false,        // first pass: no BG removal   // <— NEW
     });
   } catch (e) {
     setLoading(false);
@@ -149,9 +156,26 @@ const handleReset = () => {
   setShowCropper(false);
   setSearchText("");
   setUploadedFile(null);
+  setRemoveBgUsed(false); // <— NEW
   if (fileInputRef.current) fileInputRef.current.value = "";
 };
 
+  // NEW: one-click “remove background & re-run” using the existing cropped preview
+  const retryWithBgRemoval = async () => {                       // <— NEW
+    if (!lastCropURL) return;
+    setLoading(true);
+    try {
+      const resp = await fetch(lastCropURL);
+      const blob = await resp.blob();
+      await fetchResults({
+        file: new File([blob], "crop.jpg", { type: "image/jpeg" }),
+        removeBgFlag: true,
+      });
+      setRemoveBgUsed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto bg-white shadow-xl rounded-2xl p-8 space-y-8">
@@ -185,6 +209,22 @@ const handleReset = () => {
               <span className="text-indigo-700 font-semibold">Searching…</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* NEW: Only show “Remove background” after we have a crop preview AND results */}
+      {!loading && lastCropURL && groupedResults.length > 0 && (  // <— NEW
+        <div className="flex items-center gap-3">
+          <button
+            onClick={retryWithBgRemoval}
+            disabled={loading}
+            className={`px-4 py-2 rounded-lg border ${
+                loading ? "bg-gray-200 cursor-not-allowed" : "bg-gray-100 hover:bg-gray-200"
+            } text-gray-900 border-gray-300`}
+            >
+            {loading ? "Re-running…" : (removeBgUsed ? "Re-ran with background removed" : "Remove background & re-run")}
+            </button>
+            {removeBgUsed && <span className="text-sm text-gray-500">Now using BG-removed crop</span>}
         </div>
       )}
 
