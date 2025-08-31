@@ -9,6 +9,7 @@ from supabase import create_client
 import torch, clip
 import numpy as np
 from PIL import Image as PILImage
+from rembg import remove, new_session
 
 # --------------------------
 # Env & Clients
@@ -26,6 +27,18 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # --------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
+
+# --------- BG removal session (reused) ---------
+_rm_session = new_session("birefnet-general-lite")  # NEW
+
+def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
+    # rembg may return RGBA; flatten to RGB so JPEG saves/embeds cleanly
+    if pil_img.mode == "RGBA":
+        bg = PILImage.new("RGB", pil_img.size, (255, 255, 255))
+        bg.paste(pil_img, mask=pil_img.split()[3])
+        return bg
+    return pil_img.convert("RGB")
+
 
 
 def _normalize(nd: np.ndarray) -> np.ndarray:
@@ -70,6 +83,7 @@ async def search(
     text: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
     threshold: float = Query(0.25, ge=0.0, le=1.0),
+    remove_bg: int = Query(0),  # NEW (0 = off, 1 = on)
 ):
     """Return top-N most similar catalog images using pgvector HNSW (cosine).
     Either an image file OR a text string must be provided.
@@ -87,6 +101,15 @@ async def search(
             img = PILImage.open(io.BytesIO(await file.read())).convert("RGB")
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid image upload")
+
+        # Optional background removal (only if explicitly requested)
+        if remove_bg == 1:  # NEW
+            try:
+                cut = remove(img, session=_rm_session)
+                img = _ensure_rgb_jpeg_safe(cut)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
+
         qvec = encode_image(img)[0].tolist()
 
         try:
