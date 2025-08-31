@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import getCroppedImg from "./CropImage";
 import BoxCropper from "./BoxCropper";
+import { Eraser } from "lucide-react"; // at top with other imports
 
 const API_URL = "https://product-matcher-production-dc50.up.railway.app/search";
 
@@ -209,32 +210,36 @@ const handleReset = () => {
       
       {!showCropper && lastCropURL && (
         <div className="relative w-full h-80 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-          <img src={lastCropURL} alt="Selected region"
-              className="absolute inset-0 w-full h-full object-contain" />
+          <img
+            src={lastCropURL}
+            alt="Selected region"
+            className="absolute inset-0 w-full h-full object-contain"
+          />
           {loading && (
             <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center">
               <span className="text-indigo-700 font-semibold">Searching…</span>
             </div>
           )}
-        </div>
-      )}
 
-      {/* NEW: Only show “Remove background” after we have a crop preview AND results */}
-      {!loading && lastCropURL && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={retryWithBgRemoval}
-            disabled={loading}
-            className={`px-4 py-2 rounded-lg border ${
-                loading ? "bg-gray-200 cursor-not-allowed" : "bg-gray-100 hover:bg-gray-200"
-            } text-gray-900 border-gray-300`}
+          {/* NEW: Remove BG button, bottom-right inside the preview */}
+          {!loading && (
+            <button
+              onClick={retryWithBgRemoval}
+              disabled={loading}
+              className={`absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium shadow ${
+                loading
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
             >
-            {loading ? "Re-running…" : (removeBgUsed ? "Re-ran with background removed" : "Remove background & re-run")}
+              <Eraser className="w-4 h-4" />
+              {removeBgUsed ? "BG removed" : "Remove BG"}
             </button>
-            {removeBgUsed && <span className="text-sm text-gray-500">Now using BG-removed crop</span>}
+          )}
         </div>
       )}
 
+      
       {/* Upload */}
       {!showCropper && !lastCropURL && (
         <div className="border-2 border-dashed border-gray-300 p-8 rounded-xl text-center cursor-pointer hover:bg-gray-50"
