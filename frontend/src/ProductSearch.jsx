@@ -32,7 +32,7 @@ export default function ProductSearch() {
       if (!file && (!text || text.trim() === "")) {
         setMessage("Please provide an image or text to search.");
         setLoading(false);
-        return;
+        return null;
       }
 
       const queryParams = new URLSearchParams({
@@ -70,8 +70,10 @@ export default function ProductSearch() {
         setGroupedResults([]);
         setMessage("No matching products found above the threshold.");
       }
-    } catch (err) {
+        return data; // <-- add this
+    } catch (err) {     
       setMessage("Search error: " + err.message);
+      return null; // <-- add this
     } finally {
       setLoading(false);
     }
@@ -146,7 +148,7 @@ const handleCropDone = async (px) => {
 };
 
 const handleReset = () => {
-  if (lastCropURL) URL.revokeObjectURL(lastCropURL);
+  if (lastCropURL?.startsWith("blob:")) URL.revokeObjectURL(lastCropURL);
   if (imagePreview) URL.revokeObjectURL(imagePreview);
   setImagePreview(null);
   setLastCropURL(null);
@@ -167,10 +169,15 @@ const handleReset = () => {
     try {
       const resp = await fetch(lastCropURL);
       const blob = await resp.blob();
-      await fetchResults({
+      const data = await fetchResults({
         file: new File([blob], "crop.jpg", { type: "image/jpeg" }),
         removeBgFlag: true,
       });
+      if (data?.preview) {
+        // If you were showing a blob: URL before, it’s safe to revoke it
+        if (lastCropURL.startsWith("blob:")) URL.revokeObjectURL(lastCropURL);
+        setLastCropURL(data.preview); // backend’s BG-removed data URL
+      }      
       setRemoveBgUsed(true);
     } finally {
       setLoading(false);
@@ -213,7 +220,7 @@ const handleReset = () => {
       )}
 
       {/* NEW: Only show “Remove background” after we have a crop preview AND results */}
-      {!loading && lastCropURL && groupedResults.length > 0 && (  // <— NEW
+      {!loading && lastCropURL && (
         <div className="flex items-center gap-3">
           <button
             onClick={retryWithBgRemoval}
