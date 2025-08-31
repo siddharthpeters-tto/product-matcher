@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, UploadFile, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 
+import base64
 import torch, clip
 import numpy as np
 from PIL import Image as PILImage
@@ -98,6 +99,7 @@ async def search(
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
 
     rows = []
+    preview_data_url = None   # <— initialize ONCE here
 
     # ------------------
     # Image search ONLY → vector RPC
@@ -113,8 +115,13 @@ async def search(
             try:
                 cut = remove(img, session=_rm_session)
                 img = _ensure_rgb_jpeg_safe(cut)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=92)
+                preview_data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
+
+
 
         qvec = encode_image(img)[0].tolist()
 
@@ -204,4 +211,5 @@ async def search(
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
 
     # Return with timing not kept across both branches; could be added if needed
-    return {"count": len(results), "results": results}
+    return {"count": len(results), "results": results, "preview": preview_data_url}
+
