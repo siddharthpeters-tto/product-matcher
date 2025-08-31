@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "Product Matcher Frontend",
   "scripts": {
+    "start": "parcel src/index.html",
     "build": "parcel build src/index.html --dist-dir build --public-url ./",
-    "start": "npx serve build",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "parcel src/index.html"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +13,8 @@
   "type": "module",
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-easy-crop": "^5.5.0"
   },
   "devDependencies": {
     "parcel": "^2.12.0",
