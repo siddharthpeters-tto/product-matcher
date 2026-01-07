@@ -9,6 +9,8 @@ from supabase import create_client
 import base64
 import torch, clip
 import numpy as np
+import psutil
+import gc
 from PIL import Image as PILImage
 from rembg import remove, new_session
 
@@ -73,6 +75,10 @@ def encode_text(text: str) -> np.ndarray:
     feat = feat.cpu().numpy().astype(np.float32)
     return _normalize(feat)
 
+def log_memory(stage=""):
+    mem = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+    print(f"📊 Memory ({stage}): {mem:.2f} MB")
+
 # --------------------------
 # FastAPI
 # --------------------------
@@ -112,20 +118,29 @@ async def search(
     if file is not None:
         try:
             img = PILImage.open(io.BytesIO(await file.read())).convert("RGB")
+            # Optional: Resize large images to max 1024px
+            img.thumbnail((1024, 1024))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid image upload")
 
         # Optional background removal (only if explicitly requested)
         if remove_bg == 1:  # NEW
             try:
+                log_memory("before remove()")
                 cut = remove(img, session=_rm_session)
+                log_memory("after remove()")
                 img = _ensure_rgb_jpeg_safe(cut)
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=92)
                 preview_data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
-
+            finally:
+                # ✅ Cleanup to prevent memory leaks
+                del cut
+                del buf
+                del img
+                gc.collect()
 
 
         qvec = encode_image(img)[0].tolist()
