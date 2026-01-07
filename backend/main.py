@@ -31,11 +31,16 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 
 # --------- BG removal session (reused) ---------
 try:
-    _rm_session = new_session("birefnet-general-lite")
-    print("✅ Using birefnet-general-lite for background removal")
-except Exception as e:
-    print(f"⚠️ Failed to load birefnet-general-lite ({e}), falling back to u2net")
     _rm_session = new_session("u2net")
+    print("✅ Using u2net for background removal (lightweight)")
+    # Commenting out the better rembg model because it takes up too much memory.
+    #_rm_session = new_session("birefnet-general-lite")
+    #print("✅ Using birefnet-general-lite for background removal")
+except Exception as e:
+    #print(f"⚠️ Failed to load birefnet-general-lite ({e}), falling back to u2net")
+    #_rm_session = new_session("u2net")
+    print(f"❌ Failed to load u2net: {e}")
+    _rm_session = None
 
 
 def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
