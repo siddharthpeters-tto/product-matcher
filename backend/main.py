@@ -124,7 +124,7 @@ async def search(
             raise HTTPException(status_code=400, detail="Invalid image upload")
 
         # Optional background removal (only if explicitly requested)
-        if remove_bg == 1:  # NEW
+        if remove_bg == 1:
             try:
                 log_memory("before remove()")
                 cut = remove(img, session=_rm_session)
@@ -136,10 +136,8 @@ async def search(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
             finally:
-                # ✅ Cleanup to prevent memory leaks
                 del cut
                 del buf
-                del img
                 gc.collect()
 
 
