@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import Filters, { DEFAULT_FILTERS } from "./Filters.jsx";
 import { searchOneFile, searchTextOnly, runBatch } from "./ProductSearch.jsx";
 import { exportCartToPdf } from "./exportpdf.jsx";
-import { pickFolderImages } from "./uploads/folder_Upload.js";
+import { pickPdfToItems } from "./uploads/pdf_Upload.js";
 
 export default function UI() {
   const [filters] = useState(DEFAULT_FILTERS);
@@ -12,7 +12,7 @@ export default function UI() {
     searchTextOnly,
     runBatch,
     exportCartToPdf,
-    pickFolderImages
+    pickPdfToItems
   );
 
   return (
