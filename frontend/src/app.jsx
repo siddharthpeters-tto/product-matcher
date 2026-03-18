@@ -1,12 +1,7 @@
-import UI from "./UI.jsx";
+import UI from "./UI";
 
-export default function App() {
-  return (
-    <>
-      <div style={{ padding: 40, color: "white", background: "red", fontWeight: "bold" }}>
-        App is rendering
-      </div>
-      <UI />
-    </>
-  );
+function App() {
+  return <UI />;
 }
+
+export default App;
