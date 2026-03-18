@@ -9,7 +9,6 @@ import imageextract
 app = FastAPI()
 
 frontend_url = os.getenv("FRONTEND_URL", "")
-railway_static_url = os.getenv("RAILWAY_STATIC_URL", "")
 
 allowed_origins = [
     "http://localhost:3000",
@@ -18,9 +17,6 @@ allowed_origins = [
 
 if frontend_url:
     allowed_origins.append(frontend_url)
-
-if railway_static_url:
-    allowed_origins.append(f"https://{railway_static_url}")
 
 app.add_middleware(
     CORSMiddleware,
