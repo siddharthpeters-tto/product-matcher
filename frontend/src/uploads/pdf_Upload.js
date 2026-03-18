@@ -1,6 +1,9 @@
 // pdfUpload.js
+const ENV =
+  typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+
 export const PDF_EXTRACT_URL =
-  import.meta.env.VITE_PDF_EXTRACT_URL || "http://127.0.0.1:8001/extract-pdf-images";
+  ENV.VITE_PDF_EXTRACT_URL || "http://127.0.0.1:8001/extract-pdf-images";
 
 export function base64ToFile(base64, filename, mimeType = "image/png") {
   const byteString = atob(base64.split(",").pop());
