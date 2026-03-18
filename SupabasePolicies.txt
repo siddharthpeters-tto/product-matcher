@@ -1,0 +1,107 @@
+Here’s your **Supabase Policy + Key Usage Cheat Sheet** (current setup):
+
+---
+
+# 🔑 Keys & Roles
+
+* **anon key**
+
+  * Used by: Product Matcher, frontend, public queries.
+  * Restricted by RLS policies + storage policies.
+  * ✅ Safe to hardcode in code or ship to browser.
+
+* **authenticated key (JWT)**
+
+  * Any signed-in user (via Supabase Auth).
+  * Same policies as anon unless you add role-specific rules.
+  * Currently **no difference** between anon & authenticated.
+
+* **service\_role key**
+
+  * Used by: backend jobs (embeddings, batch imports, cron).
+  * ⚠️ Full bypass of RLS — never expose in frontend.
+
+---
+
+# 📦 Storage (bucket: `faiss`)
+
+* Bucket is **private** (`public = false`).
+* Policies allow anon/authenticated to **list + read only**:
+
+  * Files ending in `.json` (manifests, id\_maps)
+  * Files ending in `.index` (shards)
+* All other files in `faiss` (or any other bucket) remain hidden.
+
+---
+
+# 🗄️ Database
+
+### Public-readable tables (anon + authenticated)
+
+* `applications`, `brands`, `categories`, `designers`, `finishes`
+* `products`, `product_variants`, `product_images`, `product_documents`
+* `product_configurations`, `product_certifications`, `product_applications`
+* `product_designers`, `product_finishes`, `product_variant_categories`
+* `shipping_locations`
+
+**Policies:**
+
+```sql
+CREATE POLICY "public read <table>"
+ON public.<table>
+FOR SELECT TO anon, authenticated
+USING (true);
+```
+
+### Public-readable view
+
+* `product_image_metadata`
+
+  * Exposes metadata joins (no pricing).
+  * ✅ Granted `SELECT` to anon/auth.
+
+```sql
+GRANT SELECT ON public.product_image_metadata TO anon, authenticated;
+```
+
+### Locked (no anon/auth access)
+
+* `product_prices`, `configuration_prices`, `pricing_tiers`, `pricelists`
+* `image_embeddings_backup`
+
+👉 Only the **service role** can read/write here. No public policies created.
+
+---
+
+# 🛠️ Usage Guide
+
+* **Product Matcher (FastAPI app)** → use `anon` key.
+* **Frontend clients** → use `anon` key.
+* **Keyword search & metadata fetch** → works via `product_image_metadata`.
+* **FAISS index load** → works via storage policies for `.json` + `.index`.
+* **Backend embedding jobs / imports** → must use `service_role` key.
+
+---
+
+# ✅ Sanity Tests
+
+Run these in SQL editor to confirm state anytime:
+
+```sql
+-- Should work
+SET ROLE anon;
+SELECT count(*) FROM products;
+
+-- Should fail (locked)
+SET ROLE anon;
+SELECT count(*) FROM product_prices;
+```
+
+---
+
+📌 This leaves you with **secure-by-default RLS**:
+
+* Public gets only what you explicitly allowed.
+* Sensitive stuff (pricing, embeddings) is private.
+* Backend retains full power with service role.
+
