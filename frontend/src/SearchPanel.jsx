@@ -13,21 +13,18 @@ export default function SearchPanel({
   handleFileChange,
   chatMessages,
 }) {
-  const messagesEndRef = useRef(null);
+
   const assistantScrollRef = useRef(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    const el = assistantScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [chatMessages, loading]);
 
   return (
-    <aside className="bg-white rounded-2xl shadow-lg border border-gray-200 h-fit xl:sticky xl:top-6">
-      <div className="border-b border-gray-200 px-4 py-4">
-        <div className="text-sm font-semibold text-gray-900">Search</div>
-        <div className="text-xs text-gray-500">Chat-style panel</div>
-      </div>
-
-      <div className="p-4 space-y-4">
+    <aside className="bg-white rounded-2xl shadow-lg border border-gray-200 h-fit xl:sticky xl:top-6 p-4">
+      <div className="space-y-4">
         <div className="rounded-2xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
             Assistant
@@ -35,21 +32,26 @@ export default function SearchPanel({
 
           <div
             ref={assistantScrollRef}
-            className="space-y-2 h-[320px] overflow-auto pr-1"
+            className="h-[320px] overflow-auto pr-1"
           >
-            {chatMessages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`rounded-xl px-3 py-2 text-sm ${
-                  msg.role === "user"
-                    ? "bg-indigo-50 text-indigo-900"
-                    : "bg-gray-50 text-gray-700"
-                }`}
-              >
-                {msg.text}
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+            <div className="space-y-3">
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`inline-block max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                      msg.role === "user"
+                        ? "bg-indigo-50 text-indigo-900"
+                        : "bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

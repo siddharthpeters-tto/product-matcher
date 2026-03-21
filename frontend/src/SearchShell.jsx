@@ -22,7 +22,7 @@ export default function SearchShell() {
 
   useEffect(() => {
     if (!loading && results.length > 0) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, [loading, results]);
   
