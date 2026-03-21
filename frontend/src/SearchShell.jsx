@@ -4,11 +4,11 @@ import ResultsStage from "./ResultsStage.jsx";
 import { searchOneFile, searchTextOnly } from "./ProductSearch.jsx";
 import { DEFAULT_FILTERS, getBrand, getCategory } from "./Filters.jsx";
 
-
 export default function SearchShell() {
   const [searchText, setSearchText] = useState("");
   const [threshold, setThreshold] = useState(0.25);
   const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [message, setMessage] = useState("Ready to search");
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -16,10 +16,6 @@ export default function SearchShell() {
   const [chatMessages, setChatMessages] = useState([
     { role: "assistant", text: "Upload an image or describe a product to begin." }
   ]);
-  const DEFAULT_FILTERS = {
-    brand: "all",
-    category: "all",
-  };
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   const hasInput = useMemo(() => {
@@ -55,7 +51,55 @@ export default function SearchShell() {
       window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, [loading, results]);
-  
+
+  async function sendChatMessage() {
+    const userPrompt = searchText.trim();
+    if (!userPrompt || chatLoading) return;
+
+    const nextHistory = [...chatMessages, { role: "user", text: userPrompt }];
+    setChatMessages(nextHistory);
+    setSearchText("");
+    setChatLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userPrompt,
+          history: nextHistory.map(({ role, text }) => ({
+            role,
+            content: text,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Assistant response failed");
+      }
+
+      const data = await res.json();
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: data.reply || "I’m not sure how to respond to that yet.",
+        },
+      ]);
+    } catch (e) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: e?.message || "Something went wrong.",
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
   async function runSearch() {
     if (!hasInput || loading) return;
 
@@ -88,10 +132,7 @@ export default function SearchShell() {
     } catch (e) {
       const err = e?.message || "Search failed";
       setMessage(err);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: err }
-      ]);
+      setChatMessages((prev) => [...prev, { role: "assistant", text: err }]);
     } finally {
       setLoading(false);
     }
@@ -148,16 +189,18 @@ export default function SearchShell() {
             threshold={threshold}
             setThreshold={setThreshold}
             loading={loading}
+            chatLoading={chatLoading}
             message={message}
             runSearch={runSearch}
+            sendChatMessage={sendChatMessage}
             clearAll={clearAll}
             handleFileChange={handleFileChange}
             chatMessages={chatMessages}
             filters={filters}
             setFilters={setFilters}
             filterOptions={filterOptions}
-          />  
-                  </div>
+          />
+        </div>
       </div>
     </div>
   );

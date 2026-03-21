@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
+from pydantic import BaseModel
+from typing import List, Literal
+
 
 import base64
 import torch, clip
@@ -89,6 +92,26 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: List[ChatMessage] = []
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    try:
+        # TEMP: stub response (no LLM yet)
+        reply = f"You said: {req.message}"
+
+        return {
+            "reply": reply
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def root():
