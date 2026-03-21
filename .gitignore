@@ -48,10 +48,9 @@ supabase_creds.json
 
 # Ignore all node_modules globally
 **/node_modules/
+.parcel-cache/
+build/
+.env
 
-echo "node_modules/" >> .gitignore
-echo ".parcel-cache/" >> .gitignore
-echo "build/" >> .gitignore
-echo ".env" >> .gitignore
-
-git rm -r --cached node_modules .parcel-cache build
+# Python cache
+__pycache__/
