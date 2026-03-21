@@ -1,28 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import SearchPanel from "./SearchPanel.jsx";
 import ResultsStage from "./ResultsStage.jsx";
+import { getBrand, getCategory } from "./Filters.jsx";
 import { searchOneFile, searchTextOnly } from "./ProductSearch.jsx";
-import { DEFAULT_FILTERS, getBrand, getCategory } from "./Filters.jsx";
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:8000";
 
 export default function SearchShell() {
   const [searchText, setSearchText] = useState("");
-  const [threshold, setThreshold] = useState(0.25);
-  const [loading, setLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [message, setMessage] = useState("Ready to search");
+  const [chatMessages, setChatMessages] = useState([
+    { role: "assistant", text: "hello" },
+  ]);
+  const [filters, setFilters] = useState({ brand: "all", category: "all" });
+  const [pendingAction, setPendingAction] = useState(null);
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [message, setMessage] = useState("Ready to search");
+  const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [threshold, setThreshold] = useState(0.25);
   const [results, setResults] = useState([]);
-  const [chatMessages, setChatMessages] = useState([
-    { role: "assistant", text: "Upload an image or describe a product to begin." },
-  ]);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [pendingAction, setPendingAction] = useState(null);
+  const API_BASE = "http://localhost:8000";
 
   const filterOptions = useMemo(() => {
     const brands = Array.from(
@@ -53,6 +49,46 @@ export default function SearchShell() {
       window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, [loading, results]);
+
+  async function runSearch(overrideQuery = null) {
+    const safeOverride =
+      typeof overrideQuery === "string" ? overrideQuery : null;
+
+    const query = (safeOverride ?? searchText).trim();
+
+    if (!query && !file) {
+      setMessage("Enter a search term or upload an image.");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("Searching...");
+    setPendingAction(null);
+
+    try {
+      let data;
+
+      if (file) {
+        data = await searchOneFile({
+          file,
+          text: query,
+          threshold,
+        });
+      } else {
+        data = await searchTextOnly({
+          text: query,
+          threshold,
+        });
+      }
+
+      setResults(data.results || []);
+      setMessage(`Found ${data.results?.length || 0} results.`);
+    } catch (err) {
+      setMessage(`Search failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function sendChatMessage() {
     const userPrompt = searchText.trim();
@@ -103,8 +139,6 @@ export default function SearchShell() {
 
       const nextAction = data.action || null;
 
-      // If there is already a pending action and the LLM returns another action,
-      // treat that second turn as approval and execute on the frontend.
       if (pendingAction && nextAction && nextAction.type) {
         await applyPendingAction(nextAction);
         setSearchText("");
@@ -124,6 +158,30 @@ export default function SearchShell() {
     } finally {
       setChatLoading(false);
     }
+  }
+  function clearAll() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(null);
+    setPreviewUrl("");
+    setSearchText("");
+    setResults([]);
+    setMessage("Ready to search");
+    setFilters({ brand: "all", category: "all" });
+    setPendingAction(null);
+    setChatMessages([{ role: "assistant", text: "hello" }]);
+  }
+
+  function handleFileChange(nextFile) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+
+    if (!nextFile) {
+      setFile(null);
+      setPreviewUrl("");
+      return;
+    }
+
+    setFile(nextFile);
+    setPreviewUrl(URL.createObjectURL(nextFile));
   }
 
   async function applyPendingAction(actionOverride = null) {
@@ -150,91 +208,38 @@ export default function SearchShell() {
 
     if (action.type === "search" && action.query) {
       setPendingAction(null);
-      setFilters(DEFAULT_FILTERS);
+      setFilters({ brand: "all", category: "all" });
       await runSearch(action.query);
     }
   }
 
-  async function runSearch(overrideQuery = null) {
-    const safeOverride =
-      typeof overrideQuery === "string" ? overrideQuery : null;
-
-    const query = (safeOverride ?? searchText).trim();
-
-    if (!query && !file) {
-      setMessage("Enter a search term or upload an image.");
-      return;
-    }
-
-    setLoading(true);
-    setMessage("Searching...");
-    setPendingAction(null);
-
-    try {
-      let data;
-
-      if (file) {
-        data = await searchOneFile({
-          file,
-          text: query,
-          threshold,
-        });
-      } else {
-        data = await searchTextOnly({
-          text: query,
-          threshold,
-        });
-      }
-
-      setResults(data.results || []);
-      setMessage(`Found ${data.results?.length || 0} results.`);
-    } catch (err) {
-      setMessage(`Search failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleFileChange(nextFile) {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-
-    if (!nextFile) {
-      setFile(null);
-      setPreviewUrl("");
-      return;
-    }
-
-    setFile(nextFile);
-    setPreviewUrl(URL.createObjectURL(nextFile));
-  }
-
-  function clearAll() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setFile(null);
-    setPreviewUrl("");
-    setSearchText("");
-    setResults([]);
-    setMessage("Ready to search");
-    setFilters(DEFAULT_FILTERS);
-    setPendingAction(null);
-    setChatMessages([
-      { role: "assistant", text: "Upload an image or describe a product to begin." },
-    ]);
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-[1600px] px-4 py-6">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
-          <main className="bg-white rounded-2xl shadow-lg p-6">
-            <div className="p-6">
-              <div className="text-lg font-semibold mb-2">Shell is rendering</div>
-              <div className="text-sm text-slate-600">
-                Results: {filteredResults.length} / {results.length}
-              </div>
-            </div>
-          </main>
+    <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 24 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 380px",
+          gap: 24,
+          alignItems: "start",
+          maxWidth: 1600,
+          margin: "0 auto",
+        }}
+      >
+        <div style={{ background: "white", borderRadius: 16, padding: 24 }}>
+          <ResultsStage
+            file={file}
+            previewUrl={previewUrl}
+            loading={loading}
+            results={filteredResults}
+            rawResults={results}
+            message={message}
+            filters={filters}
+            setFilters={setFilters}
+            filterOptions={filterOptions}
+          />
+        </div>
 
+        <div>
           <SearchPanel
             file={file}
             previewUrl={previewUrl}
