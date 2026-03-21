@@ -73,6 +73,17 @@ export default function SearchShell() {
     const userPrompt = searchText.trim();
     if (!userPrompt || chatLoading) return;
 
+    const lower = userPrompt.toLowerCase();
+
+    if (
+      pendingAction &&
+      ["apply", "yes", "y", "do it", "go ahead", "confirm", "ok", "okay"].includes(lower)
+    ) {
+      setChatMessages((prev) => [...prev, { role: "user", text: userPrompt }]);
+      setSearchText("");
+      await applyPendingAction();
+      return;
+    }
     const nextHistory = [...chatMessages, { role: "user", text: userPrompt }];
     setChatMessages(nextHistory);
     setSearchText("");
@@ -141,6 +152,15 @@ export default function SearchShell() {
         ...prev,
         [pendingAction.filterKey]: pendingAction.value,
       }));
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: `Applied ${pendingAction.filterKey} filter: ${pendingAction.value}.`,
+        },
+      ]);
+
       setPendingAction(null);
       return;
     }
@@ -182,6 +202,10 @@ export default function SearchShell() {
     }
   }  
   async function runSearch() {
+    
+    setFilters(DEFAULT_FILTERS);
+    setPendingAction(null);
+    
     if (!hasInput || loading) return;
 
     const userPrompt = searchText.trim();

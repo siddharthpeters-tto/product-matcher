@@ -13,6 +13,7 @@ export default function SearchPanel({
   handleFileChange,
   sendChatMessage,
   chatMessages,
+  chatLoading,
   pendingAction,
   applyPendingAction,
 }) {
@@ -23,7 +24,7 @@ export default function SearchPanel({
     const el = assistantScrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [chatMessages, loading]);
+  }, [chatMessages, chatLoading]);
 
   return (
     <aside className="bg-white rounded-2xl shadow-lg border border-gray-200 h-fit xl:sticky xl:top-6 p-4">
@@ -57,7 +58,30 @@ export default function SearchPanel({
                     {loading ? "Searching..." : "Apply Search"}
                   </button>
                 </div>
-              )}              
+              )}
+
+              {pendingAction?.type === "filter" && pendingAction?.filterKey && pendingAction?.value && (
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3">
+                  <div className="text-xs font-medium text-indigo-700 uppercase tracking-wide mb-2">
+                    Suggested Filter
+                  </div>
+                  <div className="text-sm text-indigo-900 mb-3">
+                    Show only <span className="font-semibold">{pendingAction.value}</span>{" "}
+                    {pendingAction.filterKey === "brand" ? "products" : pendingAction.filterKey}.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyPendingAction}
+                    disabled={loading}
+                    className={`w-full px-4 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 ${
+                      loading ? "opacity-60 cursor-not-allowed" : ""
+                    }`}
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+              )}
+          
               {chatMessages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -91,7 +115,7 @@ export default function SearchPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!loading) sendChatMessage();
+                if (!loading && !chatLoading) sendChatMessage();
               }
             }}
           />

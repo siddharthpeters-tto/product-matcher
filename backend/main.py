@@ -52,6 +52,33 @@ except Exception as e:
     print(f"❌ Failed to load u2net: {e}")
     _rm_session = None
 
+def canonicalize_filter_value(action, context):
+    if not action or action.get("type") != "filter":
+        return action
+
+    filter_key = action.get("filterKey")
+    raw_value = (action.get("value") or "").strip()
+    if not filter_key or not raw_value:
+        return action
+
+    options = []
+    if filter_key == "brand":
+        options = [x.get("value") for x in (context.get("brandBreakdown") or []) if x.get("value")]
+    elif filter_key == "category":
+        options = [x.get("value") for x in (context.get("categoryBreakdown") or []) if x.get("value")]
+
+    raw_lower = raw_value.lower()
+    for opt in options:
+        if opt.lower() == raw_lower:
+            action["value"] = opt
+            return action
+
+    for opt in options:
+        if opt.lower() in raw_lower or raw_lower in opt.lower():
+            action["value"] = opt
+            return action
+
+    return action
 
 def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
     # rembg may return RGBA; flatten to RGB so JPEG saves/embeds cleanly
@@ -167,6 +194,9 @@ Rules:
 - Keep reply concise and useful.
 - Do not echo the user message mechanically.
 - Base your answer on the provided current UI context.
+- Never describe a filter or search action in prose without also returning it in action.
+- For brand filters, value must be the exact visible brand label from brandBreakdown if available.
+- For category filters, value must be the exact visible category label from categoryBreakdown if available.
 
 Return exactly this JSON shape:
 {{
@@ -228,6 +258,9 @@ async def chat(req: ChatRequest):
         reply = raw.get("reply") or "I can help refine the current results."
         action = raw.get("action")
 
+        # Canonicalize filter values against visible UI options
+        action = canonicalize_filter_value(action, req.context or {})
+
         # Normalize action
         if not action or not action.get("type"):
             action = None
@@ -241,7 +274,6 @@ async def chat(req: ChatRequest):
             elif action_type == "filter":
                 if action.get("filterKey") not in {"brand", "category"} or not action.get("value"):
                     action = None
-
         return {
             "reply": reply,
             "action": action
