@@ -183,11 +183,19 @@ Input:
 {json.dumps(payload, ensure_ascii=False)}
 """.strip()
 
-def call_llm_for_chat(prompt: str) -> dict[str, Any]:
+def call_llm_for_chat(prompt: str) -> dict:
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return {
+            "reply": "The LLM client is not installed on the server yet.",
+            "action": None,
+        }
+
     if not OPENAI_API_KEY:
         return {
             "reply": "The assistant is not configured with an API key yet.",
-            "action": None
+            "action": None,
         }
 
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -196,15 +204,9 @@ def call_llm_for_chat(prompt: str) -> dict[str, Any]:
         model="gpt-4o-mini",
         temperature=0.2,
         messages=[
-            {
-                "role": "system",
-                "content": "You are a product-matching assistant. Return valid JSON only."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+            {"role": "system", "content": "You are a product-matching assistant. Return valid JSON only."},
+            {"role": "user", "content": prompt},
+        ],
     )
 
     content = response.choices[0].message.content
@@ -214,9 +216,9 @@ def call_llm_for_chat(prompt: str) -> dict[str, Any]:
     except Exception:
         return {
             "reply": content or "I can help refine the current results.",
-            "action": None
+            "action": None,
         }
-
+    
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
