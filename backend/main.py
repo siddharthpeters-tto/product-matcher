@@ -7,6 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 from pydantic import BaseModel
 from typing import List, Literal
+import json
+from typing import Any
+from openai import OpenAI
+
 
 
 import base64
@@ -21,6 +25,7 @@ from rembg import remove, new_session
 # Env & Clients
 # --------------------------
 load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
 SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2NjU1MTYsImV4cCI6MjA3MTI0MTUxNn0.bNj0M4SwVT0SVRVCFarBJLtBS-nYrSM7ZsZ_nGsMR5U"
 if not SUPABASE_URL or not SUPABASE_KEY:
@@ -101,114 +106,139 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = []
     context: dict = {}
 
+class ChatAction(BaseModel):
+    type: Optional[str] = None
+    query: Optional[str] = None
+    filterKey: Optional[str] = None
+    value: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    reply: str
+    action: Optional[ChatAction] = None
+
+def build_chat_prompt(req: ChatRequest) -> str:
+    ctx = req.context or {}
+    count = ctx.get("resultCount", 0)
+    has_image = ctx.get("hasImage", False)
+    filters = ctx.get("filters", {}) or {}
+    top_results = ctx.get("topResults", []) or []
+    brand_breakdown = ctx.get("brandBreakdown", []) or []
+    category_breakdown = ctx.get("categoryBreakdown", []) or []
+
+    active_filters = {
+        k: v for k, v in filters.items()
+        if v and v != "all"
+    }
+
+    payload = {
+        "user_message": req.message,
+        "history": [m.model_dump() for m in req.history[-8:]],
+        "context": {
+            "hasImage": has_image,
+            "resultCount": count,
+            "activeFilters": active_filters,
+            "topResults": top_results,
+            "brandBreakdown": brand_breakdown,
+            "categoryBreakdown": category_breakdown,
+        },
+    }
+
+    return f"""
+You are the Product Matcher assistant for furniture search.
+
+Your job:
+- Understand the user's intent.
+- Summarize the current visible search state in a helpful way.
+- Optionally propose ONE action.
+- Never execute the action yourself.
+- Return valid JSON only.
+
+Allowed action types:
+- "search"
+- "filter"
+- null
+
+Rules:
+- Use action type "filter" when the user wants to narrow the CURRENT visible results by brand or category.
+- Use action type "search" when the user wants to run a NEW search query.
+- If no action is needed, set action to null.
+- For filter actions, only use:
+  - filterKey: "brand" or "category"
+- Keep reply concise and useful.
+- Do not echo the user message mechanically.
+- Base your answer on the provided current UI context.
+
+Return exactly this JSON shape:
+{{
+  "reply": "string",
+  "action": {{
+    "type": "search" | "filter" | null,
+    "query": "string or null",
+    "filterKey": "brand" | "category" | null,
+    "value": "string or null"
+  }}
+}}
+
+Input:
+{json.dumps(payload, ensure_ascii=False)}
+""".strip()
+
+def call_llm_for_chat(prompt: str) -> dict[str, Any]:
+    if not OPENAI_API_KEY:
+        return {
+            "reply": "The assistant is not configured with an API key yet.",
+            "action": None
+        }
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a product-matching assistant. Return valid JSON only."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    content = response.choices[0].message.content
+
+    try:
+        return json.loads(content)
+    except Exception:
+        return {
+            "reply": content or "I can help refine the current results.",
+            "action": None
+        }
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-        ctx = req.context or {}
-        count = ctx.get("resultCount", 0)
-        has_image = ctx.get("hasImage", False)
-        filters = ctx.get("filters", {}) or {}
-        top_results = ctx.get("topResults", []) or []
-        brand_breakdown = ctx.get("brandBreakdown", []) or []
-        category_breakdown = ctx.get("categoryBreakdown", []) or []
+        prompt = build_chat_prompt(req)
+        raw = call_llm_for_chat(prompt)
 
-        message_lower = req.message.lower().strip()
+        reply = raw.get("reply") or "I can help refine the current results."
+        action = raw.get("action")
 
-        active_filters = [
-            f"{k}: {v}" for k, v in filters.items()
-            if v and v != "all"
-        ]
-
-        top_names = [
-            r.get("product_name") for r in top_results
-            if r.get("product_name")
-        ][:3]
-
-        dominant_brand = brand_breakdown[0]["value"] if brand_breakdown else None
-        dominant_category = category_breakdown[0]["value"] if category_breakdown else None
-
-        action = None
-
-        search_triggers = [
-            "find ",
-            "show me ",
-            "search for ",
-            "look for ",
-        ]
-
-        for trigger in search_triggers:
-            if message_lower.startswith(trigger):
-                query = req.message[len(trigger):].strip()
-                if query:
-                    action = {
-                        "type": "search",
-                        "query": query
-                    }
-                break
-
-        if not action and "only " in message_lower and brand_breakdown:
-            for brand in brand_breakdown:
-                brand_name = brand.get("value")
-                if brand_name and brand_name.lower() in message_lower:
-                    action = {
-                        "type": "filter",
-                        "filterKey": "brand",
-                        "value": brand_name
-                    }
-                    break
-
-        if not action and "only " in message_lower and category_breakdown:
-            for category in category_breakdown:
-                category_name = category.get("value")
-                if category_name and category_name.lower() in message_lower:
-                    action = {
-                        "type": "filter",
-                        "filterKey": "category",
-                        "value": category_name
-                    }
-                    break
-
-        if count == 0:
-            reply = (
-                "I don’t currently see any matching results. "
-                "Try broadening the query, removing filters, or running a new search."
-            )
+        # Normalize action
+        if not action or not action.get("type"):
+            action = None
         else:
-            parts = [f"I’m currently showing {count} results"]
-
-            if dominant_category:
-                parts.append(f"mostly in {dominant_category}")
-
-            if dominant_brand:
-                parts.append(f"with {dominant_brand} appearing most often")
-
-            sentence = " ".join(parts) + "."
-
-            extras = []
-
-            if has_image:
-                extras.append("A reference image is loaded.")
-
-            if active_filters:
-                extras.append("Active filters: " + ", ".join(active_filters) + ".")
-
-            if top_names:
-                extras.append("Top matches include " + ", ".join(top_names) + ".")
-
-            if action and action["type"] == "filter":
-                extras.append(
-                    f'I can narrow this further by applying {action["filterKey"]}: {action["value"]}.'
-                )
-            elif action and action["type"] == "search":
-                extras.append(
-                    f'I can run a search for "{action["query"]}".'
-                )
-            else:
-                extras.append(
-                    "I can help narrow this further by brand, category, or a more specific product type."
-                )
-
-            reply = " ".join([sentence] + extras)
+            action_type = action.get("type")
+            if action_type not in {"search", "filter"}:
+                action = None
+            elif action_type == "search":
+                if not action.get("query"):
+                    action = None
+            elif action_type == "filter":
+                if action.get("filterKey") not in {"brand", "category"} or not action.get("value"):
+                    action = None
 
         return {
             "reply": reply,
