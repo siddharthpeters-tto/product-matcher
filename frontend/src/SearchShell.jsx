@@ -71,9 +71,12 @@ export default function SearchShell() {
             role,
             content: text,
           })),
+          context: {
+            hasImage: !!file,
+            resultCount: results.length,
+            filters: filters,
+          },
         }),
-      });
-
       if (!res.ok) {
         throw new Error("Assistant response failed");
       }

@@ -99,12 +99,16 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: List[ChatMessage] = []
+    context: dict = {}
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
         # TEMP: stub response (no LLM yet)
-        reply = f"You said: {req.message}"
+        ctx = req.context or {}
+        count = ctx.get("resultCount", 0)
+
+        reply = f"You said: {req.message}. I can currently see {count} results."
 
         return {
             "reply": reply
