@@ -77,6 +77,7 @@ export default function SearchShell() {
             filters: filters,
           },
         }),
+      });
       if (!res.ok) {
         throw new Error("Assistant response failed");
       }
