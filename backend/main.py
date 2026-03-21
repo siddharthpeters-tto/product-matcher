@@ -138,8 +138,29 @@ async def chat(req: ChatRequest):
         if preview_text:
             parts.append(f"Top visible products include: {preview_text}.")
 
+        action = None
+        message_lower = req.message.lower().strip()
+
+        search_triggers = [
+            "find ",
+            "show me ",
+            "search for ",
+            "look for ",
+        ]
+
+        for trigger in search_triggers:
+            if message_lower.startswith(trigger):
+                query = req.message[len(trigger):].strip()
+                if query:
+                    action = {
+                        "type": "search",
+                        "query": query
+                    }
+                break
+
         return {
-            "reply": " ".join(parts)
+            "reply": " ".join(parts),
+            "action": action
         }
 
     except Exception as e:

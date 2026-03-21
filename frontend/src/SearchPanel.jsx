@@ -13,6 +13,8 @@ export default function SearchPanel({
   handleFileChange,
   sendChatMessage,
   chatMessages,
+  pendingAction,
+  applyPendingAction,
 }) {
 
   const assistantScrollRef = useRef(null);
@@ -36,6 +38,26 @@ export default function SearchPanel({
             className="h-[320px] overflow-auto pr-1"
           >
             <div className="space-y-3">
+              {pendingAction?.type === "search" && pendingAction?.query && (
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3">
+                  <div className="text-xs font-medium text-indigo-700 uppercase tracking-wide mb-2">
+                    Suggested Search
+                  </div>
+                  <div className="text-sm text-indigo-900 mb-3">
+                    Search for: <span className="font-semibold">{pendingAction.query}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyPendingAction}
+                    disabled={loading}
+                    className={`w-full px-4 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 ${
+                      loading ? "opacity-60 cursor-not-allowed" : ""
+                    }`}
+                  >
+                    {loading ? "Searching..." : "Apply Search"}
+                  </button>
+                </div>
+              )}              
               {chatMessages.map((msg, idx) => (
                 <div
                   key={idx}

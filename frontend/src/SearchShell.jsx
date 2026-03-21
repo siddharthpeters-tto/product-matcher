@@ -17,6 +17,7 @@ export default function SearchShell() {
     { role: "assistant", text: "Upload an image or describe a product to begin." }
   ]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [pendingAction, setPendingAction] = useState(null);
 
   const hasInput = useMemo(() => {
     return !!file || !!searchText.trim();
@@ -97,6 +98,9 @@ export default function SearchShell() {
           text: data.reply || "I’m not sure how to respond to that yet.",
         },
       ]);
+
+      setPendingAction(data.action || null);
+
     } catch (e) {
       setChatMessages((prev) => [
         ...prev,
@@ -110,6 +114,46 @@ export default function SearchShell() {
     }
   }
 
+
+  async function applyPendingAction() {
+    if (!pendingAction) return;
+
+    if (pendingAction.type === "search" && pendingAction.query) {
+      setSearchText(pendingAction.query);
+      setPendingAction(null);
+
+      const userPrompt = pendingAction.query;
+
+      if (loading) return;
+
+      setLoading(true);
+      setMessage("Searching...");
+      setResults([]);
+
+      try {
+        const out = file
+          ? await searchOneFile({
+              file,
+              text: userPrompt,
+              threshold,
+            })
+          : await searchTextOnly({
+              text: userPrompt,
+              threshold,
+            });
+
+        const nextResults = out.groupedResults || [];
+        setResults(nextResults);
+        setMessage("");
+      } catch (e) {
+        const err = e?.message || "Search failed";
+        setMessage(err);
+        setChatMessages((prev) => [...prev, { role: "assistant", text: err }]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  }  
   async function runSearch() {
     if (!hasInput || loading) return;
 
@@ -169,6 +213,7 @@ export default function SearchShell() {
     setResults([]);
     setMessage("Ready to search");
     setFilters(DEFAULT_FILTERS);
+    setPendingAction(null);
     setChatMessages([
       { role: "assistant", text: "Upload an image or describe a product to begin." }
     ]);
@@ -209,6 +254,8 @@ export default function SearchShell() {
             filters={filters}
             setFilters={setFilters}
             filterOptions={filterOptions}
+            pendingAction={pendingAction}
+            applyPendingAction={applyPendingAction}
           />
         </div>
       </div>
