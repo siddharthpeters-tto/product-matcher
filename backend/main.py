@@ -1,5 +1,6 @@
 import os, io, time
 from typing import Optional
+import uvicorn
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Query, HTTPException
@@ -254,3 +255,6 @@ async def search(
     # Return with timing not kept across both branches; could be added if needed
     return {"count": len(results), "results": results, "preview": preview_data_url}
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
