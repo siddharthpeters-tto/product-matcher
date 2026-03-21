@@ -104,14 +104,42 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-        # TEMP: stub response (no LLM yet)
         ctx = req.context or {}
         count = ctx.get("resultCount", 0)
+        has_image = ctx.get("hasImage", False)
+        filters = ctx.get("filters", {}) or {}
+        top_results = ctx.get("topResults", []) or []
 
-        reply = f"You said: {req.message}. I can currently see {count} results."
+        active_filters = []
+        for key, value in filters.items():
+            if value and value != "all":
+                active_filters.append(f"{key}: {value}")
+
+        if top_results:
+            preview_names = [
+                r.get("product_name")
+                for r in top_results
+                if r.get("product_name")
+            ]
+            preview_text = ", ".join(preview_names[:3])
+        else:
+            preview_text = ""
+
+        parts = [f'You said: {req.message}.']
+
+        if has_image:
+            parts.append("A reference image is loaded.")
+
+        parts.append(f"I can currently see {count} results.")
+
+        if active_filters:
+            parts.append("Active filters: " + ", ".join(active_filters) + ".")
+
+        if preview_text:
+            parts.append(f"Top visible products include: {preview_text}.")
 
         return {
-            "reply": reply
+            "reply": " ".join(parts)
         }
 
     except Exception as e:

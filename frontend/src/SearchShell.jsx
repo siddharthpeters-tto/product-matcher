@@ -74,7 +74,13 @@ export default function SearchShell() {
           context: {
             hasImage: !!file,
             resultCount: results.length,
-            filters: filters,
+            filters,
+            topResults: results.slice(0, 3).map((item) => ({
+              product_name: item.product_name,
+              brand_name: item.brand_name,
+              category: item.product_category,
+              score: item.score,
+            })),
           },
         }),
       });
