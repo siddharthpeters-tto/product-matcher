@@ -1,6 +1,15 @@
 import React from "react";
 
-export default function ResultsStage({ file, previewUrl, loading, results, message }) {
+export default function ResultsStage({
+    file,
+    previewUrl,
+    loading,
+    results,
+    rawResults,
+    filters,
+    setFilters,
+    filterOptions,
+  }) {
   return (
     <section>
       {file && (
@@ -8,12 +17,74 @@ export default function ResultsStage({ file, previewUrl, loading, results, messa
           <div className="text-sm font-semibold text-gray-900 mb-3">
             Reference image
           </div>
-          <div className="relative w-full h-72 bg-white rounded-xl overflow-hidden border border-gray-200">
-            <img
-              src={previewUrl}
-              alt="uploaded"
-              className="absolute inset-0 w-full h-full object-contain"
-            />
+
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+            <div className="relative h-72 bg-white rounded-xl overflow-hidden border border-gray-200">
+              <img
+                src={previewUrl}
+                alt="uploaded"
+                className="absolute inset-0 w-full h-full object-contain"
+              />
+            </div>
+
+            {rawResults.length > 0 && (
+              <div className="rounded-2xl border border-gray-200 bg-white p-3">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+                  Filters
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Brand</label>
+                    <select
+                      value={filters.brand}
+                      onChange={(e) =>
+                        setFilters((prev) => ({ ...prev, brand: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="all">All brands</option>
+                      {filterOptions.brands.map((brand) => (
+                        <option key={brand} value={brand}>
+                          {brand}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Category</label>
+                    <select
+                      value={filters.category}
+                      onChange={(e) =>
+                        setFilters((prev) => ({ ...prev, category: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="all">All categories</option>
+                      {filterOptions.categories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFilters({
+                        brand: "all",
+                        category: "all",
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -64,11 +135,11 @@ export default function ResultsStage({ file, previewUrl, loading, results, messa
         </div>
       ) : (
         <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="mb-6">
             <div className="text-sm font-medium text-gray-700">
-                {results.length} matches found
+              {results.length} matches found
             </div>
-            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {results.map((item, i) => (
               <div

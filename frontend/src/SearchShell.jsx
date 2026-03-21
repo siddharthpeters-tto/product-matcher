@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import SearchPanel from "./SearchPanel.jsx";
 import ResultsStage from "./ResultsStage.jsx";
 import { searchOneFile, searchTextOnly } from "./ProductSearch.jsx";
+import { DEFAULT_FILTERS, getBrand, getCategory } from "./Filters.jsx";
 
 
 export default function SearchShell() {
@@ -15,10 +16,39 @@ export default function SearchShell() {
   const [chatMessages, setChatMessages] = useState([
     { role: "assistant", text: "Upload an image or describe a product to begin." }
   ]);
+  const DEFAULT_FILTERS = {
+    brand: "all",
+    category: "all",
+  };
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   const hasInput = useMemo(() => {
     return !!file || !!searchText.trim();
   }, [file, searchText]);
+
+  const filterOptions = useMemo(() => {
+    const brands = Array.from(
+      new Set(results.map((item) => getBrand(item)).filter(Boolean))
+    ).sort();
+
+    const categories = Array.from(
+      new Set(results.map((item) => getCategory(item)).filter(Boolean))
+    ).sort();
+
+    return { brands, categories };
+  }, [results]);
+
+  const filteredResults = useMemo(() => {
+    return results.filter((item) => {
+      const brandMatch =
+        filters.brand === "all" || getBrand(item) === filters.brand;
+
+      const categoryMatch =
+        filters.category === "all" || getCategory(item) === filters.category;
+
+      return brandMatch && categoryMatch;
+    });
+  }, [results, filters]);
 
   useEffect(() => {
     if (!loading && results.length > 0) {
@@ -87,6 +117,7 @@ export default function SearchShell() {
     setSearchText("");
     setResults([]);
     setMessage("Ready to search");
+    setFilters(DEFAULT_FILTERS);
     setChatMessages([
       { role: "assistant", text: "Upload an image or describe a product to begin." }
     ]);
@@ -101,8 +132,12 @@ export default function SearchShell() {
               file={file}
               previewUrl={previewUrl}
               loading={loading}
-              results={results}
+              results={filteredResults}
+              rawResults={results}
               message={message}
+              filters={filters}
+              setFilters={setFilters}
+              filterOptions={filterOptions}
             />
           </main>
           <SearchPanel
@@ -118,8 +153,11 @@ export default function SearchShell() {
             clearAll={clearAll}
             handleFileChange={handleFileChange}
             chatMessages={chatMessages}
-          />      
-        </div>
+            filters={filters}
+            setFilters={setFilters}
+            filterOptions={filterOptions}
+          />  
+                  </div>
       </div>
     </div>
   );
