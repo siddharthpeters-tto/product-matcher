@@ -49,7 +49,7 @@ export default function SearchPanel({
                   </div>
                   <button
                     type="button"
-                    onClick={applyPendingAction}
+                    onClick={() => applyPendingAction()}
                     disabled={loading}
                     className={`w-full px-4 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 ${
                       loading ? "opacity-60 cursor-not-allowed" : ""
@@ -71,7 +71,7 @@ export default function SearchPanel({
                   </div>
                   <button
                     type="button"
-                    onClick={applyPendingAction}
+                    onClick={() => applyPendingAction()}
                     disabled={loading}
                     className={`w-full px-4 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 ${
                       loading ? "opacity-60 cursor-not-allowed" : ""
