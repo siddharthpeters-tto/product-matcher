@@ -4,6 +4,22 @@ import ResultsStage from "./ResultsStage.jsx";
 import { searchOneFile, searchTextOnly } from "./ProductSearch.jsx";
 import { DEFAULT_FILTERS, getBrand, getCategory } from "./Filters.jsx";
 
+function buildBreakdown(items, key, limit = 5) {
+  const counts = new Map();
+
+  items.forEach((item) => {
+    const value = item?.[key];
+    if (!value) return;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
+}
+
+
 export default function SearchShell() {
   const [searchText, setSearchText] = useState("");
   const [threshold, setThreshold] = useState(0.25);
@@ -76,12 +92,14 @@ export default function SearchShell() {
             hasImage: !!file,
             resultCount: results.length,
             filters,
-            topResults: results.slice(0, 3).map((item) => ({
+            topResults: results.slice(0, 5).map((item) => ({
               product_name: item.product_name,
               brand_name: item.brand_name,
               category: item.product_category,
               score: item.score,
             })),
+            brandBreakdown: buildBreakdown(results, "brand_name"),
+            categoryBreakdown: buildBreakdown(results, "product_category"),
           },
         }),
       });
@@ -117,6 +135,15 @@ export default function SearchShell() {
 
   async function applyPendingAction() {
     if (!pendingAction) return;
+
+    if (pendingAction.type === "filter" && pendingAction.filterKey && pendingAction.value) {
+      setFilters((prev) => ({
+        ...prev,
+        [pendingAction.filterKey]: pendingAction.value,
+      }));
+      setPendingAction(null);
+      return;
+    }
 
     if (pendingAction.type === "search" && pendingAction.query) {
       setSearchText(pendingAction.query);

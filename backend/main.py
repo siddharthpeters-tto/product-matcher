@@ -109,37 +109,25 @@ async def chat(req: ChatRequest):
         has_image = ctx.get("hasImage", False)
         filters = ctx.get("filters", {}) or {}
         top_results = ctx.get("topResults", []) or []
+        brand_breakdown = ctx.get("brandBreakdown", []) or []
+        category_breakdown = ctx.get("categoryBreakdown", []) or []
 
-        active_filters = []
-        for key, value in filters.items():
-            if value and value != "all":
-                active_filters.append(f"{key}: {value}")
+        message_lower = req.message.lower().strip()
 
-        if top_results:
-            preview_names = [
-                r.get("product_name")
-                for r in top_results
-                if r.get("product_name")
-            ]
-            preview_text = ", ".join(preview_names[:3])
-        else:
-            preview_text = ""
+        active_filters = [
+            f"{k}: {v}" for k, v in filters.items()
+            if v and v != "all"
+        ]
 
-        parts = [f'You said: {req.message}.']
+        top_names = [
+            r.get("product_name") for r in top_results
+            if r.get("product_name")
+        ][:3]
 
-        if has_image:
-            parts.append("A reference image is loaded.")
-
-        parts.append(f"I can currently see {count} results.")
-
-        if active_filters:
-            parts.append("Active filters: " + ", ".join(active_filters) + ".")
-
-        if preview_text:
-            parts.append(f"Top visible products include: {preview_text}.")
+        dominant_brand = brand_breakdown[0]["value"] if brand_breakdown else None
+        dominant_category = category_breakdown[0]["value"] if category_breakdown else None
 
         action = None
-        message_lower = req.message.lower().strip()
 
         search_triggers = [
             "find ",
@@ -158,8 +146,72 @@ async def chat(req: ChatRequest):
                     }
                 break
 
+        if not action and "only " in message_lower and brand_breakdown:
+            for brand in brand_breakdown:
+                brand_name = brand.get("value")
+                if brand_name and brand_name.lower() in message_lower:
+                    action = {
+                        "type": "filter",
+                        "filterKey": "brand",
+                        "value": brand_name
+                    }
+                    break
+
+        if not action and "only " in message_lower and category_breakdown:
+            for category in category_breakdown:
+                category_name = category.get("value")
+                if category_name and category_name.lower() in message_lower:
+                    action = {
+                        "type": "filter",
+                        "filterKey": "category",
+                        "value": category_name
+                    }
+                    break
+
+        if count == 0:
+            reply = (
+                "I don’t currently see any matching results. "
+                "Try broadening the query, removing filters, or running a new search."
+            )
+        else:
+            parts = [f"I’m currently showing {count} results"]
+
+            if dominant_category:
+                parts.append(f"mostly in {dominant_category}")
+
+            if dominant_brand:
+                parts.append(f"with {dominant_brand} appearing most often")
+
+            sentence = " ".join(parts) + "."
+
+            extras = []
+
+            if has_image:
+                extras.append("A reference image is loaded.")
+
+            if active_filters:
+                extras.append("Active filters: " + ", ".join(active_filters) + ".")
+
+            if top_names:
+                extras.append("Top matches include " + ", ".join(top_names) + ".")
+
+            if action and action["type"] == "filter":
+                extras.append(
+                    f'I can narrow this further by applying {action["filterKey"]}: {action["value"]}.'
+                )
+            elif action and action["type"] == "search":
+                extras.append(
+                    f'I can run a search for "{action["query"]}".'
+                )
+            else:
+                extras.append(
+                    "I can help narrow this further by brand, category, or a more specific product type."
+                )
+
+            reply = " ".join([sentence] + extras)
+
         return {
-            "reply": " ".join(parts),
+            "reply": reply,
             "action": action
         }
 
