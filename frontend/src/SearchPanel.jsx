@@ -11,6 +11,7 @@ export default function SearchPanel({
   runSearch,
   clearAll,
   handleFileChange,
+  sendChatMessage,
   chatMessages,
 }) {
 
@@ -68,7 +69,7 @@ export default function SearchPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!loading) runSearch();
+                if (!loading) sendChatMessage();
               }
             }}
           />
