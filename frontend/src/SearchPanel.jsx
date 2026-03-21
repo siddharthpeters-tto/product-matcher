@@ -147,7 +147,7 @@ export default function SearchPanel({
             </button>
 
             <button
-              onClick={runSearch}
+              onClick={() => runSearch()}
               disabled={loading}
               className={`flex-1 px-4 py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 ${
                 loading ? "opacity-60 cursor-not-allowed" : ""

@@ -156,7 +156,10 @@ export default function SearchShell() {
   }
 
   async function runSearch(overrideQuery = null) {
-    const query = (overrideQuery ?? searchText).trim();
+    const safeOverride =
+      typeof overrideQuery === "string" ? overrideQuery : null;
+
+    const query = (safeOverride ?? searchText).trim();
 
     if (!query && !file) {
       setMessage("Enter a search term or upload an image.");
