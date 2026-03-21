@@ -227,17 +227,12 @@ export default function SearchShell() {
       <div className="mx-auto max-w-[1600px] px-4 py-6">
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
           <main className="bg-white rounded-2xl shadow-lg p-6">
-            <ResultsStage
-              file={file}
-              previewUrl={previewUrl}
-              loading={loading}
-              results={filteredResults}
-              rawResults={results}
-              message={message}
-              filters={filters}
-              setFilters={setFilters}
-              filterOptions={filterOptions}
-            />
+            <div className="p-6">
+              <div className="text-lg font-semibold mb-2">Shell is rendering</div>
+              <div className="text-sm text-slate-600">
+                Results: {filteredResults.length} / {results.length}
+              </div>
+            </div>
           </main>
 
           <SearchPanel
