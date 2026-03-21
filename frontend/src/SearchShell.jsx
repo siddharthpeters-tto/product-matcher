@@ -4,21 +4,10 @@ import ResultsStage from "./ResultsStage.jsx";
 import { searchOneFile, searchTextOnly } from "./ProductSearch.jsx";
 import { DEFAULT_FILTERS, getBrand, getCategory } from "./Filters.jsx";
 
-function buildBreakdown(items, key, limit = 5) {
-  const counts = new Map();
-
-  items.forEach((item) => {
-    const value = item?.[key];
-    if (!value) return;
-    counts.set(value, (counts.get(value) || 0) + 1);
-  });
-
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([value, count]) => ({ value, count }));
-}
-
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:8000";
 
 export default function SearchShell() {
   const [searchText, setSearchText] = useState("");
@@ -30,14 +19,10 @@ export default function SearchShell() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [results, setResults] = useState([]);
   const [chatMessages, setChatMessages] = useState([
-    { role: "assistant", text: "Upload an image or describe a product to begin." }
+    { role: "assistant", text: "Upload an image or describe a product to begin." },
   ]);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [pendingAction, setPendingAction] = useState(null);
-
-  const hasInput = useMemo(() => {
-    return !!file || !!searchText.trim();
-  }, [file, searchText]);
 
   const filterOptions = useMemo(() => {
     const brands = Array.from(
@@ -73,69 +58,67 @@ export default function SearchShell() {
     const userPrompt = searchText.trim();
     if (!userPrompt || chatLoading) return;
 
-    const lower = userPrompt.toLowerCase();
-
-    if (
-      pendingAction &&
-      ["apply", "yes", "y", "do it", "go ahead", "confirm", "ok", "okay"].includes(lower)
-    ) {
-      setChatMessages((prev) => [...prev, { role: "user", text: userPrompt }]);
-      setSearchText("");
-      await applyPendingAction();
-      return;
-    }
-    const nextHistory = [...chatMessages, { role: "user", text: userPrompt }];
-    setChatMessages(nextHistory);
-    setSearchText("");
+    setChatMessages((prev) => [...prev, { role: "user", text: userPrompt }]);
     setChatLoading(true);
 
     try {
-      const res = await fetch("https://product-matcher-production-dc50.up.railway.app/api/chat", {
+      const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userPrompt,
-          history: nextHistory.map(({ role, text }) => ({
-            role,
-            content: text,
-          })),
           context: {
             hasImage: !!file,
             resultCount: results.length,
             filters,
-            topResults: results.slice(0, 5).map((item) => ({
-              product_name: item.product_name,
-              brand_name: item.brand_name,
-              category: item.product_category,
-              score: item.score,
+            topResults: results.slice(0, 8).map((r) => ({
+              id: r.id,
+              name: r.name,
+              brand: getBrand(r),
+              category: getCategory(r),
+              score: r.score,
             })),
-            brandBreakdown: buildBreakdown(results, "brand_name"),
-            categoryBreakdown: buildBreakdown(results, "product_category"),
+            brandBreakdown: filterOptions.brands.map((b) => ({
+              value: b,
+              count: results.filter((r) => getBrand(r) === b).length,
+            })),
+            categoryBreakdown: filterOptions.categories.map((c) => ({
+              value: c,
+              count: results.filter((r) => getCategory(r) === c).length,
+            })),
           },
         }),
       });
+
       if (!res.ok) {
-        throw new Error("Assistant response failed");
+        throw new Error(`Chat request failed: ${res.status}`);
       }
 
       const data = await res.json();
 
       setChatMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          text: data.reply || "I’m not sure how to respond to that yet.",
-        },
+        { role: "assistant", text: data.reply || "Okay." },
       ]);
 
-      setPendingAction(data.action || null);
+      const nextAction = data.action || null;
 
-    } catch (e) {
+      // If there is already a pending action and the LLM returns another action,
+      // treat that second turn as approval and execute on the frontend.
+      if (pendingAction && nextAction && nextAction.type) {
+        await applyPendingAction(nextAction);
+        setSearchText("");
+        return;
+      }
+
+      setPendingAction(nextAction);
+      setSearchText("");
+    } catch (err) {
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: e?.message || "Something went wrong.",
+          text: "Sorry, something went wrong while processing that request.",
         },
       ]);
     } finally {
@@ -143,21 +126,21 @@ export default function SearchShell() {
     }
   }
 
+  async function applyPendingAction(actionOverride = null) {
+    const action = actionOverride || pendingAction;
+    if (!action) return;
 
-  async function applyPendingAction() {
-    if (!pendingAction) return;
-
-    if (pendingAction.type === "filter" && pendingAction.filterKey && pendingAction.value) {
+    if (action.type === "filter" && action.filterKey && action.value) {
       setFilters((prev) => ({
         ...prev,
-        [pendingAction.filterKey]: pendingAction.value,
+        [action.filterKey]: action.value,
       }));
 
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: `Applied ${pendingAction.filterKey} filter: ${pendingAction.value}.`,
+          text: `Applied ${action.filterKey} filter: ${action.value}.`,
         },
       ]);
 
@@ -165,79 +148,45 @@ export default function SearchShell() {
       return;
     }
 
-    if (pendingAction.type === "search" && pendingAction.query) {
-      setSearchText(pendingAction.query);
+    if (action.type === "search" && action.query) {
       setPendingAction(null);
-
-      const userPrompt = pendingAction.query;
-
-      if (loading) return;
-
-      setLoading(true);
-      setMessage("Searching...");
-      setResults([]);
-
-      try {
-        const out = file
-          ? await searchOneFile({
-              file,
-              text: userPrompt,
-              threshold,
-            })
-          : await searchTextOnly({
-              text: userPrompt,
-              threshold,
-            });
-
-        const nextResults = out.groupedResults || [];
-        setResults(nextResults);
-        setMessage("");
-      } catch (e) {
-        const err = e?.message || "Search failed";
-        setMessage(err);
-        setChatMessages((prev) => [...prev, { role: "assistant", text: err }]);
-      } finally {
-        setLoading(false);
-      }
+      setFilters(DEFAULT_FILTERS);
+      await runSearch(action.query);
     }
-  }  
-  async function runSearch() {
-    
-    setFilters(DEFAULT_FILTERS);
-    setPendingAction(null);
-    
-    if (!hasInput || loading) return;
+  }
 
-    const userPrompt = searchText.trim();
+  async function runSearch(overrideQuery = null) {
+    const query = (overrideQuery ?? searchText).trim();
 
-    if (userPrompt) {
-      setChatMessages((prev) => [...prev, { role: "user", text: userPrompt }]);
+    if (!query && !file) {
+      setMessage("Enter a search term or upload an image.");
+      return;
     }
 
-    setSearchText("");
     setLoading(true);
     setMessage("Searching...");
-    setResults([]);
+    setPendingAction(null);
 
     try {
-      const out = file
-        ? await searchOneFile({
-            file,
-            text: userPrompt,
-            threshold,
-          })
-        : await searchTextOnly({
-            text: userPrompt,
-            threshold,
-          });
+      let data;
 
-      const nextResults = out.groupedResults || [];
-      setResults(nextResults);
-      setMessage("");
-    } catch (e) {
-      const err = e?.message || "Search failed";
-      setMessage(err);
-      setChatMessages((prev) => [...prev, { role: "assistant", text: err }]);
+      if (file) {
+        data = await searchOneFile({
+          file,
+          text: query,
+          threshold,
+        });
+      } else {
+        data = await searchTextOnly({
+          text: query,
+          threshold,
+        });
+      }
+
+      setResults(data.results || []);
+      setMessage(`Found ${data.results?.length || 0} results.`);
+    } catch (err) {
+      setMessage(`Search failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -266,7 +215,7 @@ export default function SearchShell() {
     setFilters(DEFAULT_FILTERS);
     setPendingAction(null);
     setChatMessages([
-      { role: "assistant", text: "Upload an image or describe a product to begin." }
+      { role: "assistant", text: "Upload an image or describe a product to begin." },
     ]);
   }
 
@@ -287,6 +236,7 @@ export default function SearchShell() {
               filterOptions={filterOptions}
             />
           </main>
+
           <SearchPanel
             file={file}
             previewUrl={previewUrl}
