@@ -140,7 +140,7 @@ class ChatAction(BaseModel):
     value: Optional[str] = None
     metric: Optional[str] = None
     field: Optional[str] = None
-    
+
 class ChatResponse(BaseModel):
     reply: str
     action: Optional[ChatAction] = None
@@ -247,7 +247,7 @@ def run_aggregate_action(action: dict):
         "value": value,
         "count": len(product_ids),
     }
-}
+
     
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
