@@ -708,8 +708,17 @@ async def search(
     print("DEBUG keys:", rows[0].keys() if rows else "NO ROWS")
     results = [map_row(r) for r in rows]
 
+    print("DEBUG conditions:", conditions)
+    print("DEBUG pre-filter count:", len(results))
+    print("DEBUG pre-filter brands:", sorted({(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
+    print("DEBUG pre-filter categories:", sorted({(r.get("category_name") or "").strip() for r in results if r.get("category_name")}))
+
     # Apply structured hard filters AFTER retrieval
     results = apply_search_conditions(results, conditions)
+
+    print("DEBUG post-filter count:", len(results))
+    print("DEBUG post-filter brands:", sorted({(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
+    print("DEBUG post-filter categories:", sorted({(r.get("category_name") or "").strip() for r in results if r.get("category_name")}))
 
     # Sort after filtering
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
