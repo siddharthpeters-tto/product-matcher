@@ -95,6 +95,7 @@ export default function SearchShell() {
     if (!userPrompt || chatLoading) return;
 
     setChatMessages((prev) => [...prev, { role: "user", text: userPrompt }]);
+    setSearchText("");
     setChatLoading(true);
 
     try {
@@ -141,12 +142,10 @@ export default function SearchShell() {
 
       if (pendingAction && nextAction && nextAction.type) {
         await applyPendingAction(nextAction);
-        setSearchText("");
         return;
       }
 
       setPendingAction(nextAction);
-      setSearchText("");
     } catch (err) {
       setChatMessages((prev) => [
         ...prev,

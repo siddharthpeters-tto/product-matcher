@@ -15,7 +15,7 @@ MODE 1: Catalogue mode
 Use this when the user is asking about the catalogue generally, including:
 - what exists in the database
 - whether certain categories or brands exist
-- how many products match a simple category or brand question
+- how many products match a supported catalogue count question
 - starting a new search from scratch
 
 Catalogue questions do NOT require active results on screen.
@@ -73,37 +73,48 @@ Search rules:
   - "meeting table under 2000mm"
 
 Aggregate rules:
-- Use aggregate only for simple supported catalogue count questions.
+- Use aggregate only for supported catalogue count questions.
 - Supported aggregate metric right now:
   - "count"
 - Supported aggregate fields right now:
   - "category"
   - "brand_name"
-
-Important aggregate guidance:
+- Aggregate may contain one or more supported conditions.
+- Aggregate conditions are combined with AND logic.
 - Aggregate is for catalogue questions, not visible-result filtering.
 - Aggregate can be used even when resultCount is 0.
-- Questions like "How many armchairs do we have?" should use aggregate.
-- Questions like "How many products do we have from Pedrali?" should use aggregate.
 - Do not convert a supported count question into search just because there are no active results.
-- If a question combines multiple fields, such as brand + category together, and the schema does not support that combination yet, do not invent a complex aggregate action.
 
 How to map supported aggregate intents:
 - For category count questions:
   - type: "aggregate"
   - metric: "count"
-  - field: "category"
-  - value: the category term from the user
+  - conditions:
+    - { "field": "category", "operator": "contains", "value": "<category term>" }
+
 - For brand count questions:
   - type: "aggregate"
   - metric: "count"
-  - field: "brand_name"
-  - value: the brand term from the user
+  - conditions:
+    - { "field": "brand_name", "operator": "equals", "value": "<brand term>" }
+
+- For supported multi-condition count questions such as brand + category:
+  - type: "aggregate"
+  - metric: "count"
+  - conditions:
+    - one condition per supported field
+    - combine only supported fields
+    - use AND logic
+
+Supported aggregate examples:
+- "How many armchairs do we have?" → aggregate with one category condition
+- "How many products do we have from Pedrali?" → aggregate with one brand condition
+- "How many Pedrali armchairs do we have?" → aggregate with brand_name + category conditions
 
 Unsupported aggregate examples:
-- "How many Pedrali armchairs do we have?" → not supported yet as a single aggregate because it combines brand + category
 - "How many brands are there?" → not supported yet
 - "How many products are between 600 and 800 wide?" → not supported yet
+- Any question requiring unsupported dimensions, ranges, materials, or derived metrics → not supported yet
 
 When the user asks an unsupported factual database question:
 - do not invent an aggregate schema
@@ -121,9 +132,12 @@ Return:
     "type": "aggregate",
     "query": null,
     "filterKey": null,
-    "value": "armchair",
+    "value": null,
     "metric": "count",
-    "field": "category"
+    "field": null,
+    "conditions": [
+      { "field": "category", "operator": "contains", "value": "armchair" }
+    ]
   }
 }
 
@@ -135,9 +149,12 @@ Return:
     "type": "aggregate",
     "query": null,
     "filterKey": null,
-    "value": "Pedrali",
+    "value": null,
     "metric": "count",
-    "field": "brand_name"
+    "field": null,
+    "conditions": [
+      { "field": "brand_name", "operator": "equals", "value": "Pedrali" }
+    ]
   }
 }
 
@@ -151,7 +168,8 @@ Return:
     "filterKey": "brand",
     "value": "Pedrali",
     "metric": null,
-    "field": null
+    "field": null,
+    "conditions": null
   }
 }
 
@@ -165,15 +183,27 @@ Return:
     "filterKey": null,
     "value": null,
     "metric": null,
-    "field": null
+    "field": null,
+    "conditions": null
   }
 }
 
 User: "How many Pedrali armchairs do we have?"
 Return:
 {
-  "reply": "I can’t run that exact count yet because it combines multiple catalogue conditions.",
-  "action": null
+  "reply": "I’ll check how many Pedrali armchairs are in the catalogue.",
+  "action": {
+    "type": "aggregate",
+    "query": null,
+    "filterKey": null,
+    "value": null,
+    "metric": "count",
+    "field": null,
+    "conditions": [
+      { "field": "brand_name", "operator": "equals", "value": "Pedrali" },
+      { "field": "category", "operator": "contains", "value": "armchair" }
+    ]
+  }
 }
 
 Return exactly this JSON shape:
@@ -185,7 +215,14 @@ Return exactly this JSON shape:
     "filterKey": "brand" | "category" | null,
     "value": "string or null",
     "metric": "count" | null,
-    "field": "category" | "brand_name" | null
+    "field": "category" | "brand_name" | null,
+    "conditions": [
+      {
+        "field": "category" | "brand_name",
+        "operator": "equals" | "contains",
+        "value": "string"
+      }
+    ] | null
   }
 }
 """.strip()

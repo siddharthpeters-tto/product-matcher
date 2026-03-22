@@ -136,6 +136,11 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = []
     context: dict = {}
 
+class ChatCondition(BaseModel):
+    field: str
+    operator: str = "equals"
+    value: str
+
 class ChatAction(BaseModel):
     type: Optional[str] = None
     query: Optional[str] = None
@@ -143,6 +148,7 @@ class ChatAction(BaseModel):
     value: Optional[str] = None
     metric: Optional[str] = None
     field: Optional[str] = None
+    conditions: Optional[List[ChatCondition]] = None
 
 class ChatResponse(BaseModel):
     reply: str
@@ -217,24 +223,79 @@ def call_llm_for_chat(prompt: str) -> dict:
             "reply": content or "I can help refine the current results.",
             "action": None,
         }
+
+def normalize_aggregate_action(action: dict):
+    if not isinstance(action, dict):
+        return action
+
+    if action.get("type") != "aggregate":
+        return action
+
+    conditions = action.get("conditions")
+    if isinstance(conditions, list) and len(conditions) > 0:
+        return action
+
+    field = action.get("field")
+    value = action.get("value")
+
+    if field and value:
+        operator = "contains" if field == "category" else "equals"
+        action["conditions"] = [
+            {
+                "field": field,
+                "operator": operator,
+                "value": value,
+            }
+        ]
+
+    return action
     
 def run_aggregate_action(action: dict):
     metric = action.get("metric")
-    field = action.get("field")
-    value = action.get("value")
+    conditions = action.get("conditions") or []
 
     if metric != "count":
         raise ValueError("Unsupported aggregate metric")
 
-    if field not in {"category", "brand_name"}:
-        raise ValueError("Unsupported aggregate field")
+    if not conditions:
+        raise ValueError("Aggregate requires at least one condition")
 
     query = supabase.table("product_catalogue_flat").select("product_id")
 
-    if field == "category":
-        query = query.ilike("category_name", f"%{value}%")
-    elif field == "brand_name":
-        query = query.ilike("brand_name", value.strip())
+    applied_conditions = []
+
+    for cond in conditions:
+        field = cond.get("field")
+        operator = cond.get("operator")
+        value = (cond.get("value") or "").strip()
+
+        if not value:
+            raise ValueError("Aggregate condition missing value")
+
+        if field == "category":
+            if operator == "contains":
+                query = query.ilike("category_name", f"%{value}%")
+            elif operator == "equals":
+                query = query.ilike("category_name", value)
+            else:
+                raise ValueError("Unsupported category operator")
+
+        elif field == "brand_name":
+            if operator == "equals":
+                query = query.ilike("brand_name", value)
+            elif operator == "contains":
+                query = query.ilike("brand_name", f"%{value}%")
+            else:
+                raise ValueError("Unsupported brand operator")
+
+        else:
+            raise ValueError(f"Unsupported aggregate field: {field}")
+
+        applied_conditions.append({
+            "field": field,
+            "operator": operator,
+            "value": value,
+        })
 
     result = query.execute()
 
@@ -246,8 +307,7 @@ def run_aggregate_action(action: dict):
 
     return {
         "metric": metric,
-        "field": field,
-        "value": value,
+        "conditions": applied_conditions,
         "count": len(product_ids),
     }
 
@@ -255,9 +315,8 @@ def run_aggregate_action(action: dict):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-        #*Debug
         print("CHAT CONTEXT:", req.context)
-        #Debug End
+
         prompt = build_chat_prompt(req)
         raw = call_llm_for_chat(prompt)
 
@@ -276,13 +335,9 @@ async def chat(req: ChatRequest):
         # Canonicalize filter values against visible UI options
         action = canonicalize_filter_value(action, req.context or {})
 
-        reply = raw.get("reply") or "I can help refine the current results."
-        action = raw.get("action")
-
-        if not isinstance(action, dict):
-            action = None
-
-        action = canonicalize_filter_value(action, req.context or {})
+        # Normalize aggregate actions so old single-field outputs
+        # still become conditions-based actions
+        action = normalize_aggregate_action(action)
 
         if not action or not action.get("type"):
             action = None
@@ -305,6 +360,7 @@ async def chat(req: ChatRequest):
                         "value": action.get("value"),
                         "metric": None,
                         "field": None,
+                        "conditions": None,
                     }
 
             elif action_type == "search":
@@ -318,28 +374,57 @@ async def chat(req: ChatRequest):
                         "value": None,
                         "metric": None,
                         "field": None,
+                        "conditions": None,
                     }
 
             elif action_type == "aggregate":
                 metric = action.get("metric")
-                field = action.get("field")
-                value = action.get("value")
+                conditions = action.get("conditions") or []
 
                 if metric not in {"count"}:
                     action = None
-                elif field not in {"category", "brand_name"}:
-                    action = None
-                elif not value:
+                elif not isinstance(conditions, list) or not conditions:
                     action = None
                 else:
-                    action = {
-                        "type": "aggregate",
-                        "query": None,
-                        "filterKey": None,
-                        "value": value,
-                        "metric": metric,
-                        "field": field,
-                    }
+                    normalized_conditions = []
+
+                    for cond in conditions:
+                        if not isinstance(cond, dict):
+                            action = None
+                            break
+
+                        field = cond.get("field")
+                        operator = cond.get("operator")
+                        value = (cond.get("value") or "").strip()
+
+                        if field not in {"category", "brand_name"}:
+                            action = None
+                            break
+
+                        if operator not in {"equals", "contains"}:
+                            action = None
+                            break
+
+                        if not value:
+                            action = None
+                            break
+
+                        normalized_conditions.append({
+                            "field": field,
+                            "operator": operator,
+                            "value": value,
+                        })
+
+                    if action is not None:
+                        action = {
+                            "type": "aggregate",
+                            "query": None,
+                            "filterKey": None,
+                            "value": None,
+                            "metric": metric,
+                            "field": None,
+                            "conditions": normalized_conditions,
+                        }
 
             else:
                 action = None
@@ -350,13 +435,32 @@ async def chat(req: ChatRequest):
             try:
                 aggregate_result = run_aggregate_action(action)
                 count = aggregate_result["count"]
-                value = aggregate_result["value"]
-                field = aggregate_result["field"]
+                conditions = aggregate_result.get("conditions", [])
 
-                if field == "category":
-                    reply = f"We currently have {count} products in the category '{value}'."
-                elif field == "brand_name":
-                    reply = f"We currently have {count} products for the brand '{value}'."
+                if len(conditions) == 1:
+                    cond = conditions[0]
+                    field = cond["field"]
+                    value = cond["value"]
+
+                    if field == "category":
+                        reply = f"We currently have {count} products in the category '{value}'."
+                    elif field == "brand_name":
+                        reply = f"We currently have {count} products for the brand '{value}'."
+                    else:
+                        reply = f"We currently have {count} matching products."
+                else:
+                    label_parts = []
+                    for cond in conditions:
+                        if cond["field"] == "brand_name":
+                            label_parts.append(cond["value"])
+                        elif cond["field"] == "category":
+                            label_parts.append(cond["value"])
+
+                    if label_parts:
+                        reply = f"We currently have {count} products matching {' + '.join(label_parts)}."
+                    else:
+                        reply = f"We currently have {count} products matching those catalogue conditions."
+
             except Exception as e:
                 print("aggregate error:", e)
                 aggregate_result = None
