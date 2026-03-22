@@ -255,15 +255,26 @@ def run_aggregate_action(action: dict):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-        raw = {
-            "reply": "Testing aggregate.",
-            "action": {
-                "type": "aggregate",
-                "metric": "count",
-                "field": "category",
-                "value": "armchair"
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    try:
+        prompt = build_chat_prompt(req)
+        raw = call_llm_for_chat(prompt)
+
+        if not isinstance(raw, dict):
+            raw = {
+                "reply": "I couldn’t interpret that response reliably.",
+                "action": None,
             }
-        }
+
+        reply = raw.get("reply") or "I can help refine the current results."
+        action = raw.get("action")
+
+        if not isinstance(action, dict):
+            action = None
+
+        # Canonicalize filter values against visible UI options
+        action = canonicalize_filter_value(action, req.context or {})
 
         reply = raw.get("reply") or "I can help refine the current results."
         action = raw.get("action")
