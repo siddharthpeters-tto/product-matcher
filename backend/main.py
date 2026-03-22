@@ -670,12 +670,17 @@ async def search(
         try:
             query = supabase.table("product_catalogue_flat").select(
                 ",".join([
-                    "variant_id",
-                    "product_id",
-                    "product_name",
-                    "variant_name",
-                    "brand_name",
-                    "category_name",
+                        "variant_id",
+                        "product_id",
+                        "product_name",
+                        "variant_name",
+                        "model_number",
+                        "product_url",
+                        "brand_id",
+                        "brand_name",
+                        "category_name",
+                        "image_id",
+                        "image_url",
                 ])
             )
 
@@ -711,6 +716,7 @@ async def search(
         for r in rows:
             variant_id = r.get("variant_id")
             product_id = r.get("product_id")
+            image_id = r.get("image_id")
             dedupe_key = variant_id or product_id
 
             if dedupe_key in seen:
@@ -718,17 +724,17 @@ async def search(
             seen.add(dedupe_key)
 
             results.append({
-                "image_id": None,
-                "image_url": None,
-                "image_path": None,
+                "image_id": r.get("image_id"),
+                "image_url": r.get("image_url"),
+                "image_path": r.get("image_url"),
                 "score": 1.0,
                 "variant_id": variant_id,
                 "variant_name": r.get("variant_name"),
-                "model_number": None,
-                "product_url": None,
+                "model_number": r.get("model_number"),
+                "product_url": r.get("product_url"),
                 "product_id": product_id,
                 "product_name": r.get("product_name"),
-                "brand_id": None,
+                "brand_id": r.get("brand_id"),
                 "brand_name": r.get("brand_name"),
                 "product_category": r.get("category_name"),
                 "category_name": r.get("category_name"),
