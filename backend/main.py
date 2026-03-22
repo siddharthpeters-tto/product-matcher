@@ -255,9 +255,6 @@ def run_aggregate_action(action: dict):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-@app.post("/api/chat")
-async def chat(req: ChatRequest):
-    try:
         prompt = build_chat_prompt(req)
         raw = call_llm_for_chat(prompt)
 
