@@ -53,7 +53,10 @@ except Exception as e:
     _rm_session = None
 
 def canonicalize_filter_value(action, context):
-    if not action or action.get("type") != "filter":
+    if not isinstance(action, dict):
+        return action
+
+    if action.get("type") != "filter":
         return action
 
     filter_key = action.get("filterKey")
@@ -63,11 +66,20 @@ def canonicalize_filter_value(action, context):
 
     options = []
     if filter_key == "brand":
-        options = [x.get("value") for x in (context.get("brandBreakdown") or []) if x.get("value")]
+        options = [
+            x.get("value")
+            for x in (context.get("brandBreakdown") or [])
+            if x.get("value")
+        ]
     elif filter_key == "category":
-        options = [x.get("value") for x in (context.get("categoryBreakdown") or []) if x.get("value")]
+        options = [
+            x.get("value")
+            for x in (context.get("categoryBreakdown") or [])
+            if x.get("value")
+        ]
 
     raw_lower = raw_value.lower()
+
     for opt in options:
         if opt.lower() == raw_lower:
             action["value"] = opt
@@ -254,9 +266,19 @@ async def chat(req: ChatRequest):
     try:
         prompt = build_chat_prompt(req)
         raw = call_llm_for_chat(prompt)
+        print("RAW CHAT RESPONSE:", raw)
+
+        if not isinstance(raw, dict):
+            raw = {
+                "reply": "I couldn’t interpret that response reliably.",
+                "action": None,
+            }
 
         reply = raw.get("reply") or "I can help refine the current results."
         action = raw.get("action")
+
+        if not isinstance(action, dict):
+            action = None
 
         # Canonicalize filter values against visible UI options
         action = canonicalize_filter_value(action, req.context or {})
