@@ -54,10 +54,33 @@ export default function SearchShell() {
     const safeOverrideQuery =
       typeof overrideQuery === "string" ? overrideQuery : null;
 
-    const query = (safeOverrideQuery ?? searchText).trim();
+    const baseQuery = (safeOverrideQuery ?? searchText).trim();
     const conditions = Array.isArray(overrideConditions)
       ? overrideConditions
       : [];
+
+    const brandTerms = conditions
+      .filter((c) => c?.field === "brand_name" && c?.value)
+      .map((c) => c.value.trim());
+
+    const categoryTerms = conditions
+      .filter((c) => c?.field === "category" && c?.value)
+      .map((c) => c.value.trim());
+
+    const queryParts = [
+      ...brandTerms,
+      baseQuery,
+    ];
+
+    for (const term of categoryTerms) {
+      const lowerBase = baseQuery.toLowerCase();
+      const lowerTerm = term.toLowerCase();
+      if (!lowerBase.includes(lowerTerm)) {
+        queryParts.push(term);
+      }
+    }
+
+    const query = queryParts.filter(Boolean).join(" ").trim();
 
     if (!query && !file) {
       setMessage("Enter a search term or upload an image.");
