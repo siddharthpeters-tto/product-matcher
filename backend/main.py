@@ -280,7 +280,6 @@ async def chat(req: ChatRequest):
         if not isinstance(action, dict):
             action = None
 
-        # Canonicalize filter values against visible UI options
         action = canonicalize_filter_value(action, req.context or {})
 
         # Normalize action
