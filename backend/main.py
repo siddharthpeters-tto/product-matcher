@@ -569,11 +569,14 @@ async def search(
     threshold: float = Query(0.25, ge=0.0, le=1.0),
     remove_bg: int = Query(0),
 ):
-    """Return top-N similar catalog images using pgvector HNSW (cosine).
-    Either an image file OR a text string must be provided.
-    Optional structured search conditions can be passed as JSON.
+    """Search products.
+
+    Rules:
+    - If an image is uploaded, use the existing vector image search path.
+    - If text search includes structured conditions, use direct Supabase catalogue query.
+    - If text search has no structured conditions, use the existing hybrid vector + keyword path.
     """
-    if not file and not (text and text.strip()):
+    if not file and not (text and text.strip()) and not conditions_json:
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
 
     conditions = []
@@ -638,54 +641,154 @@ async def search(
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Vector search failed: {e}")
 
+        def map_rpc_row(r: dict) -> dict:
+            return {
+                "image_id": r.get("image_id"),
+                "image_url": r.get("image_url"),
+                "image_path": r.get("image_url"),
+                "score": r.get("similarity"),
+                "variant_id": r.get("product_variant_id"),
+                "variant_name": r.get("variant_name"),
+                "model_number": r.get("model_number"),
+                "product_url": r.get("product_url"),
+                "product_id": r.get("product_id"),
+                "product_name": r.get("product_name"),
+                "brand_id": r.get("brand_id"),
+                "brand_name": r.get("brand_name"),
+                "product_category": r.get("product_category"),
+                "category_name": r.get("product_category"),
+            }
+
+        results = [map_rpc_row(r) for r in rows]
+        results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+        return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
+
     # ------------------
-    # Text search → HYBRID (vector + keyword RPC)
+    # Structured text search → direct Supabase query
     # ------------------
-    else:
-        qvec = encode_text(text.strip())[0].tolist()
-
-        vec_rows = []
+    if conditions:
         try:
-            start = time.perf_counter()
-            vresp = supabase.rpc(
-                "match_product_images",
-                {
-                    "query_embedding": qvec,
-                    "match_count": int(top_k),
-                    "threshold": float(threshold),
-                },
-            ).execute()
-            vdur = (time.perf_counter() - start) * 1000
-            print(f"RPC/vector (text) took {vdur:.2f} ms for top_k={top_k}, threshold={threshold}")
-            vec_rows = vresp.data or []
-        except Exception as e:
-            print("Vector RPC failed:", e)
+            query = supabase.table("product_catalogue_flat").select(
+                ",".join([
+                    "image_id",
+                    "image_url",
+                    "product_variant_id",
+                    "variant_name",
+                    "model_number",
+                    "product_url",
+                    "product_id",
+                    "product_name",
+                    "brand_id",
+                    "brand_name",
+                    "category_name",
+                ])
+            )
 
-        kw_rows = []
-        try:
-            start = time.perf_counter()
-            kresp = supabase.rpc(
-                "keyword_match_product_images",
-                {
-                    "q": text.strip(),
-                    "match_count": int(top_k),
-                },
-            ).execute()
-            kdur = (time.perf_counter() - start) * 1000
-            print(f"RPC/keyword took {kdur:.2f} ms for top_k={top_k}")
-            kw_rows = kresp.data or []
-        except Exception as e:
-            print("Keyword RPC failed:", e)
+            for cond in conditions:
+                field = cond.get("field")
+                operator = cond.get("operator")
+                value = (cond.get("value") or "").strip()
 
-        by_id = {}
-        for r in vec_rows:
-            by_id[r.get("image_id")] = r
-        for r in kw_rows:
-            _id = r.get("image_id")
-            if _id not in by_id:
-                r["similarity"] = max(0.99, float(r.get("similarity") or 0))
-                by_id[_id] = r
-        rows = list(by_id.values())
+                if not value:
+                    continue
+
+                if field == "brand_name":
+                    if operator == "equals":
+                        query = query.ilike("brand_name", value)
+                    elif operator == "contains":
+                        query = query.ilike("brand_name", f"%{value}%")
+
+                elif field == "category":
+                    if operator == "equals":
+                        query = query.ilike("category_name", value)
+                    elif operator == "contains":
+                        query = query.ilike("category_name", f"%{value}%")
+
+            result = query.limit(int(top_k)).execute()
+            rows = result.data or []
+
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Structured catalogue search failed: {e}")
+
+        results = []
+        seen = set()
+
+        for r in rows:
+            image_id = r.get("image_id")
+            variant_id = r.get("product_variant_id")
+            product_id = r.get("product_id")
+            dedupe_key = image_id or variant_id or product_id
+
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
+            results.append({
+                "image_id": image_id,
+                "image_url": r.get("image_url"),
+                "image_path": r.get("image_url"),
+                "score": 1.0,
+                "variant_id": variant_id,
+                "variant_name": r.get("variant_name"),
+                "model_number": r.get("model_number"),
+                "product_url": r.get("product_url"),
+                "product_id": product_id,
+                "product_name": r.get("product_name"),
+                "brand_id": r.get("brand_id"),
+                "brand_name": r.get("brand_name"),
+                "product_category": r.get("category_name"),
+                "category_name": r.get("category_name"),
+            })
+
+        return {"count": len(results), "results": results[:top_k], "preview": None}
+
+    # ------------------
+    # Plain text search → existing HYBRID vector + keyword path
+    # ------------------
+    qvec = encode_text(text.strip())[0].tolist()
+
+    vec_rows = []
+    try:
+        start = time.perf_counter()
+        vresp = supabase.rpc(
+            "match_product_images",
+            {
+                "query_embedding": qvec,
+                "match_count": int(top_k),
+                "threshold": float(threshold),
+            },
+        ).execute()
+        vdur = (time.perf_counter() - start) * 1000
+        print(f"RPC/vector (text) took {vdur:.2f} ms for top_k={top_k}, threshold={threshold}")
+        vec_rows = vresp.data or []
+    except Exception as e:
+        print("Vector RPC failed:", e)
+
+    kw_rows = []
+    try:
+        start = time.perf_counter()
+        kresp = supabase.rpc(
+            "keyword_match_product_images",
+            {
+                "q": text.strip(),
+                "match_count": int(top_k),
+            },
+        ).execute()
+        kdur = (time.perf_counter() - start) * 1000
+        print(f"RPC/keyword took {kdur:.2f} ms for top_k={top_k}")
+        kw_rows = kresp.data or []
+    except Exception as e:
+        print("Keyword RPC failed:", e)
+
+    by_id = {}
+    for r in vec_rows:
+        by_id[r.get("image_id")] = r
+    for r in kw_rows:
+        _id = r.get("image_id")
+        if _id not in by_id:
+            r["similarity"] = max(0.99, float(r.get("similarity") or 0))
+            by_id[_id] = r
+    rows = list(by_id.values())
 
     def map_row(r: dict) -> dict:
         return {
@@ -705,22 +808,7 @@ async def search(
             "category_name": r.get("product_category"),
         }
 
-    print("DEBUG keys:", rows[0].keys() if rows else "NO ROWS")
     results = [map_row(r) for r in rows]
-
-    print("DEBUG conditions:", conditions)
-    print("DEBUG pre-filter count:", len(results))
-    print("DEBUG pre-filter brands:", sorted({str(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
-    print("DEBUG pre-filter categories:", sorted({str(r.get("category_name") or r.get("product_category") or "") for r in results if (r.get("category_name") or r.get("product_category"))}))
-
-    # Apply structured hard filters AFTER retrieval
-    results = apply_search_conditions(results, conditions)
-
-    print("DEBUG post-filter count:", len(results))
-    print("DEBUG post-filter brands:", sorted({str(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
-    print("DEBUG post-filter categories:", sorted({str(r.get("category_name") or r.get("product_category") or "") for r in results if (r.get("category_name") or r.get("product_category"))}))
-
-    # Sort after filtering
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
 
-    return {"count": len(results), "results": results, "preview": preview_data_url}
+    return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
