@@ -140,7 +140,11 @@ export default function SearchShell() {
 
       const nextAction = data.action || null;
 
-      if (pendingAction && nextAction && nextAction.type) {
+      if (
+        pendingAction &&
+        nextAction &&
+        (nextAction.type === "search" || nextAction.type === "filter")
+      ) {
         await applyPendingAction(nextAction);
         return;
       }
