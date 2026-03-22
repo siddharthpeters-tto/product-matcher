@@ -14,13 +14,25 @@ function groupResults(rows = []) {
   return Object.values(grouped);
 }
 
-export async function searchOneFile({ apiUrl = API_URL, file, threshold = 0.25, text = "", removeBg = false, signal }) {
+export async function searchOneFile({
+  apiUrl = API_URL,
+  file,
+  threshold = 0.25,
+  text = "",
+  conditions = [],
+  removeBg = false,
+  signal,
+}) {
   const queryParams = new URLSearchParams({
     threshold: String(threshold),
   });
 
   if (text?.trim()) queryParams.append("text", text.trim());
   if (removeBg) queryParams.append("remove_bg", "1");
+
+  if (Array.isArray(conditions) && conditions.length > 0) {
+    queryParams.append("conditions_json", JSON.stringify(conditions));
+  }
 
   const endpoint = `${apiUrl}?${queryParams.toString()}`;
   const options = { method: "POST", signal };
@@ -49,11 +61,31 @@ export async function searchOneFile({ apiUrl = API_URL, file, threshold = 0.25, 
   };
 }
 
-export async function searchTextOnly({ apiUrl = API_URL, text, threshold = 0.25, signal }) {
-  return searchOneFile({ apiUrl, text, threshold, signal });
+export async function searchTextOnly({
+  apiUrl = API_URL,
+  text,
+  threshold = 0.25,
+  conditions = [],
+  signal,
+}) {
+  return searchOneFile({
+    apiUrl,
+    text,
+    threshold,
+    conditions,
+    signal,
+  });
 }
 
-export async function runBatch({ apiUrl = API_URL, items, threshold = 0.25, text = "", signal, onUpdate }) {
+export async function runBatch({
+  apiUrl = API_URL,
+  items,
+  threshold = 0.25,
+  text = "",
+  conditions = [],
+  signal,
+  onUpdate,
+}) {
   const output = [];
 
   for (const item of items) {
@@ -63,6 +95,7 @@ export async function runBatch({ apiUrl = API_URL, items, threshold = 0.25, text
         file: item.file,
         text,
         threshold,
+        conditions,
         signal,
       });
 

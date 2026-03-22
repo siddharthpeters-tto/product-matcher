@@ -50,11 +50,14 @@ export default function SearchShell() {
     }
   }, [loading, results]);
 
-  async function runSearch(overrideQuery = null) {
-    const safeOverride =
+  async function runSearch(overrideQuery = null, overrideConditions = null) {
+    const safeOverrideQuery =
       typeof overrideQuery === "string" ? overrideQuery : null;
 
-    const query = (safeOverride ?? searchText).trim();
+    const query = (safeOverrideQuery ?? searchText).trim();
+    const conditions = Array.isArray(overrideConditions)
+      ? overrideConditions
+      : [];
 
     if (!query && !file) {
       setMessage("Enter a search term or upload an image.");
@@ -73,11 +76,13 @@ export default function SearchShell() {
           file,
           text: query,
           threshold,
+          conditions,
         });
       } else {
         data = await searchTextOnly({
           text: query,
           threshold,
+          conditions,
         });
       }
 
@@ -209,10 +214,10 @@ export default function SearchShell() {
       return;
     }
 
-    if (action.type === "search" && action.query) {
+    if (action.type === "search" && (action.query || action.conditions)) {
       setPendingAction(null);
       setFilters({ brand: "all", category: "all" });
-      await runSearch(action.query);
+      await runSearch(action.query || "", action.conditions || []);
     }
   }
 

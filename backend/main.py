@@ -249,7 +249,53 @@ def normalize_aggregate_action(action: dict):
         ]
 
     return action
-    
+
+def apply_search_conditions(results: list, conditions: list):
+    if not conditions:
+        return results
+
+    def matches(item, cond):
+        field = cond.get("field")
+        operator = cond.get("operator")
+        value = (cond.get("value") or "").strip().lower()
+
+        if not value:
+            return True
+
+        if field == "brand_name":
+            actual = str(
+                item.get("brand_name")
+                or item.get("brand")
+                or ""
+            ).strip().lower()
+
+            if operator == "equals":
+                return actual == value
+            if operator == "contains":
+                return value in actual
+
+        if field == "category":
+            actual = str(
+                item.get("category_name")
+                or item.get("product_category")
+                or item.get("category")
+                or ""
+            ).strip().lower()
+
+            if operator == "equals":
+                return actual == value
+            if operator == "contains":
+                return value in actual
+
+        return True
+
+    filtered = []
+    for item in results:
+        if all(matches(item, cond) for cond in conditions):
+            filtered.append(item)
+
+    return filtered
+
 def run_aggregate_action(action: dict):
     metric = action.get("metric")
     conditions = action.get("conditions") or []
@@ -518,18 +564,29 @@ def root():
 async def search(
     file: UploadFile | None = File(default=None),
     text: Optional[str] = Query(default=None),
+    conditions_json: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
     threshold: float = Query(0.25, ge=0.0, le=1.0),
-    remove_bg: int = Query(0),  # NEW (0 = off, 1 = on)
+    remove_bg: int = Query(0),
 ):
-    """Return top-N most similar catalog images using pgvector HNSW (cosine).
+    """Return top-N similar catalog images using pgvector HNSW (cosine).
     Either an image file OR a text string must be provided.
+    Optional structured search conditions can be passed as JSON.
     """
     if not file and not (text and text.strip()):
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
 
+    conditions = []
+    if conditions_json:
+        try:
+            parsed = json.loads(conditions_json)
+            if isinstance(parsed, list):
+                conditions = parsed
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid conditions_json")
+
     rows = []
-    preview_data_url = None   # <— initialize ONCE here
+    preview_data_url = None
 
     # ------------------
     # Image search ONLY → vector RPC
@@ -537,12 +594,10 @@ async def search(
     if file is not None:
         try:
             img = PILImage.open(io.BytesIO(await file.read())).convert("RGB")
-            # Optional: Resize large images to max 1024px
             img.thumbnail((1024, 1024))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid image upload")
 
-        # Optional background removal (only if explicitly requested)
         if remove_bg == 1:
             try:
                 log_memory("before remove()")
@@ -555,10 +610,15 @@ async def search(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
             finally:
-                del cut
-                del buf
+                try:
+                    del cut
+                except Exception:
+                    pass
+                try:
+                    del buf
+                except Exception:
+                    pass
                 gc.collect()
-
 
         qvec = encode_image(img)[0].tolist()
 
@@ -567,12 +627,12 @@ async def search(
             resp = supabase.rpc(
                 "match_product_images",
                 {
-                "query_embedding": qvec,
-                "match_count": int(top_k),
-                "threshold": float(threshold),
+                    "query_embedding": qvec,
+                    "match_count": int(top_k),
+                    "threshold": float(threshold),
                 },
             ).execute()
-            duration = (time.perf_counter() - start) * 1000  # ms
+            duration = (time.perf_counter() - start) * 1000
             print(f"RPC/vector (image) took {duration:.2f} ms for top_k={top_k}, threshold={threshold}")
             rows = resp.data or []
         except Exception as e:
@@ -584,13 +644,16 @@ async def search(
     else:
         qvec = encode_text(text.strip())[0].tolist()
 
-        # Vector RPC
         vec_rows = []
         try:
             start = time.perf_counter()
             vresp = supabase.rpc(
                 "match_product_images",
-                {"query_embedding": qvec, "match_count": int(top_k), "threshold": float(threshold)},
+                {
+                    "query_embedding": qvec,
+                    "match_count": int(top_k),
+                    "threshold": float(threshold),
+                },
             ).execute()
             vdur = (time.perf_counter() - start) * 1000
             print(f"RPC/vector (text) took {vdur:.2f} ms for top_k={top_k}, threshold={threshold}")
@@ -598,13 +661,15 @@ async def search(
         except Exception as e:
             print("Vector RPC failed:", e)
 
-        # Keyword RPC
         kw_rows = []
         try:
             start = time.perf_counter()
             kresp = supabase.rpc(
                 "keyword_match_product_images",
-                {"q": text.strip(), "match_count": int(top_k)},
+                {
+                    "q": text.strip(),
+                    "match_count": int(top_k),
+                },
             ).execute()
             kdur = (time.perf_counter() - start) * 1000
             print(f"RPC/keyword took {kdur:.2f} ms for top_k={top_k}")
@@ -612,25 +677,22 @@ async def search(
         except Exception as e:
             print("Keyword RPC failed:", e)
 
-        # Merge & dedupe by image_id (prefer vector entry if duplicate)
         by_id = {}
         for r in vec_rows:
             by_id[r.get("image_id")] = r
         for r in kw_rows:
             _id = r.get("image_id")
             if _id not in by_id:
-                # optional: bump similarity so keyword-only hits float up
                 r["similarity"] = max(0.99, float(r.get("similarity") or 0))
                 by_id[_id] = r
         rows = list(by_id.values())
 
-    # Normalize output structure for frontend
     def map_row(r: dict) -> dict:
         return {
             "image_id": r.get("image_id"),
             "image_url": r.get("image_url"),
-            "image_path": r.get("image_url"),  # alias for frontend compatibility
-            "score": r.get("similarity"),  # cosine similarity in [0,1]
+            "image_path": r.get("image_url"),
+            "score": r.get("similarity"),
             "variant_id": r.get("product_variant_id"),
             "variant_name": r.get("variant_name"),
             "model_number": r.get("model_number"),
@@ -640,12 +702,16 @@ async def search(
             "brand_id": r.get("brand_id"),
             "brand_name": r.get("brand_name"),
             "product_category": r.get("product_category"),
+            "category_name": r.get("product_category"),
         }
+
     print("DEBUG keys:", rows[0].keys() if rows else "NO ROWS")
     results = [map_row(r) for r in rows]
 
-    # Optional: sort by score desc after merging (text path)
+    # Apply structured hard filters AFTER retrieval
+    results = apply_search_conditions(results, conditions)
+
+    # Sort after filtering
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
 
-    # Return with timing not kept across both branches; could be added if needed
     return {"count": len(results), "results": results, "preview": preview_data_url}
