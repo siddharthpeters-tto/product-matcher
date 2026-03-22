@@ -18,7 +18,7 @@ export default function SearchShell() {
   const [chatLoading, setChatLoading] = useState(false);
   const [threshold, setThreshold] = useState(0.25);
   const [results, setResults] = useState([]);
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
 
   const filterOptions = useMemo(() => {
     const brands = Array.from(
