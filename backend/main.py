@@ -710,15 +710,15 @@ async def search(
 
     print("DEBUG conditions:", conditions)
     print("DEBUG pre-filter count:", len(results))
-    print("DEBUG pre-filter brands:", sorted({(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
-    print("DEBUG pre-filter categories:", sorted({(r.get("category_name") or "").strip() for r in results if r.get("category_name")}))
+    print("DEBUG pre-filter brands:", sorted({str(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
+    print("DEBUG pre-filter categories:", sorted({str(r.get("category_name") or r.get("product_category") or "") for r in results if (r.get("category_name") or r.get("product_category"))}))
 
     # Apply structured hard filters AFTER retrieval
     results = apply_search_conditions(results, conditions)
 
     print("DEBUG post-filter count:", len(results))
-    print("DEBUG post-filter brands:", sorted({(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
-    print("DEBUG post-filter categories:", sorted({(r.get("category_name") or "").strip() for r in results if r.get("category_name")}))
+    print("DEBUG post-filter brands:", sorted({str(r.get("brand_name") or "").strip() for r in results if r.get("brand_name")}))
+    print("DEBUG post-filter categories:", sorted({str(r.get("category_name") or r.get("product_category") or "") for r in results if (r.get("category_name") or r.get("product_category"))}))
 
     # Sort after filtering
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
