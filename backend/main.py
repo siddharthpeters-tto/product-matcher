@@ -364,18 +364,51 @@ async def chat(req: ChatRequest):
                     }
 
             elif action_type == "search":
-                if not action.get("query"):
+                query = (action.get("query") or "").strip()
+                conditions = action.get("conditions") or []
+
+                if not query and not conditions:
                     action = None
                 else:
-                    action = {
-                        "type": "search",
-                        "query": action.get("query"),
-                        "filterKey": None,
-                        "value": None,
-                        "metric": None,
-                        "field": None,
-                        "conditions": None,
-                    }
+                    normalized_conditions = []
+
+                    for cond in conditions:
+                        if not isinstance(cond, dict):
+                            action = None
+                            break
+
+                        field = cond.get("field")
+                        operator = cond.get("operator")
+                        value = (cond.get("value") or "").strip()
+
+                        if field not in {"category", "brand_name"}:
+                            action = None
+                            break
+
+                        if operator not in {"equals", "contains"}:
+                            action = None
+                            break
+
+                        if not value:
+                            action = None
+                            break
+
+                        normalized_conditions.append({
+                            "field": field,
+                            "operator": operator,
+                            "value": value,
+                        })
+
+                    if action is not None:
+                        action = {
+                            "type": "search",
+                            "query": query or None,
+                            "filterKey": None,
+                            "value": None,
+                            "metric": None,
+                            "field": None,
+                            "conditions": normalized_conditions or None,
+                        }
 
             elif action_type == "aggregate":
                 metric = action.get("metric")
