@@ -670,15 +670,10 @@ async def search(
         try:
             query = supabase.table("product_catalogue_flat").select(
                 ",".join([
-                    "image_id",
-                    "image_url",
-                    "product_variant_id",
-                    "variant_name",
-                    "model_number",
-                    "product_url",
+                    "variant_id",
                     "product_id",
                     "product_name",
-                    "brand_id",
+                    "variant_name",
                     "brand_name",
                     "category_name",
                 ])
@@ -714,34 +709,32 @@ async def search(
         seen = set()
 
         for r in rows:
-            image_id = r.get("image_id")
-            variant_id = r.get("product_variant_id")
+            variant_id = r.get("variant_id")
             product_id = r.get("product_id")
-            dedupe_key = image_id or variant_id or product_id
+            dedupe_key = variant_id or product_id
 
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
 
             results.append({
-                "image_id": image_id,
-                "image_url": r.get("image_url"),
-                "image_path": r.get("image_url"),
+                "image_id": None,
+                "image_url": None,
+                "image_path": None,
                 "score": 1.0,
                 "variant_id": variant_id,
                 "variant_name": r.get("variant_name"),
-                "model_number": r.get("model_number"),
-                "product_url": r.get("product_url"),
+                "model_number": None,
+                "product_url": None,
                 "product_id": product_id,
                 "product_name": r.get("product_name"),
-                "brand_id": r.get("brand_id"),
+                "brand_id": None,
                 "brand_name": r.get("brand_name"),
                 "product_category": r.get("category_name"),
                 "category_name": r.get("category_name"),
             })
 
         return {"count": len(results), "results": results[:top_k], "preview": None}
-
     # ------------------
     # Plain text search → existing HYBRID vector + keyword path
     # ------------------
