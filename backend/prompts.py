@@ -17,6 +17,7 @@ Use this when the user is asking about the catalogue generally, including:
 - whether certain categories or brands exist
 - how many products match a supported catalogue count question
 - starting a new search from scratch
+- asking to show, find, retrieve, or match products from the catalogue
 
 Catalogue questions do NOT require active results on screen.
 
@@ -64,13 +65,47 @@ Filter rules:
 - If the requested visible brand or category is not clearly present, do not force a filter.
 
 Search rules:
-- Use search when the user wants a new retrieval.
-- Write a clean natural-language query for product retrieval.
-- Good examples:
-  - "black executive task chair"
-  - "scandinavian timber armchair"
-  - "white boucle lounge chair"
-  - "meeting table under 2000mm"
+- Use search when the user wants a new retrieval from the catalogue.
+- Search may include one or more supported structured conditions.
+- Supported search condition fields right now:
+  - "category"
+  - "brand_name"
+- When the user is asking to find products, and the message includes a supported brand or category constraint, do not leave those terms only inside the free-text query.
+- Put supported metadata constraints into `conditions`.
+- Use `query` only for the remaining semantic intent.
+- If the request includes a recognizable brand name and a recognizable product category, return a search action with both conditions populated.
+- Do not return a plain text-only search query such as "Pedrali armchair" when supported metadata constraints are clearly present.
+- If the request is mostly brand + category, it is okay for `query` to be just the category term.
+- If the request includes extra descriptive style/material/use-case language that is not yet a supported structured field, keep that in `query` and still place supported brand/category constraints into `conditions`.
+
+Examples of correct search behavior:
+- "Show me Pedrali chairs" ->
+  - type: "search"
+  - query: "chairs"
+  - conditions:
+    - { "field": "brand_name", "operator": "equals", "value": "Pedrali" }
+    - { "field": "category", "operator": "contains", "value": "chair" }
+
+- "Show me Pedrali armchairs" ->
+  - type: "search"
+  - query: "armchairs"
+  - conditions:
+    - { "field": "brand_name", "operator": "equals", "value": "Pedrali" }
+    - { "field": "category", "operator": "contains", "value": "armchair" }
+
+- "Show me Scandinavian Pedrali armchairs" ->
+  - type: "search"
+  - query: "Scandinavian armchairs"
+  - conditions:
+    - { "field": "brand_name", "operator": "equals", "value": "Pedrali" }
+    - { "field": "category", "operator": "contains", "value": "armchair" }
+
+Incorrect search behavior:
+- Do NOT return:
+  - type: "search"
+  - query: "Pedrali armchair"
+  - conditions: null
+- when brand and category were both clearly available as supported structured constraints.
 
 Aggregate rules:
 - Use aggregate only for supported catalogue count questions.
@@ -107,14 +142,14 @@ How to map supported aggregate intents:
     - use AND logic
 
 Supported aggregate examples:
-- "How many armchairs do we have?" → aggregate with one category condition
-- "How many products do we have from Pedrali?" → aggregate with one brand condition
-- "How many Pedrali armchairs do we have?" → aggregate with brand_name + category conditions
+- "How many armchairs do we have?" -> aggregate with one category condition
+- "How many products do we have from Pedrali?" -> aggregate with one brand condition
+- "How many Pedrali armchairs do we have?" -> aggregate with brand_name + category conditions
 
 Unsupported aggregate examples:
-- "How many brands are there?" → not supported yet
-- "How many products are between 600 and 800 wide?" → not supported yet
-- Any question requiring unsupported dimensions, ranges, materials, or derived metrics → not supported yet
+- "How many brands are there?" -> not supported yet
+- "How many products are between 600 and 800 wide?" -> not supported yet
+- Any question requiring unsupported dimensions, ranges, materials, or derived metrics -> not supported yet
 
 When the user asks an unsupported factual database question:
 - do not invent an aggregate schema
@@ -179,12 +214,50 @@ Return:
   "reply": "I can search for timber armchairs.",
   "action": {
     "type": "search",
-    "query": "timber armchair",
+    "query": "timber armchairs",
     "filterKey": null,
     "value": null,
     "metric": null,
     "field": null,
-    "conditions": null
+    "conditions": [
+      { "field": "category", "operator": "contains", "value": "armchair" }
+    ]
+  }
+}
+
+User: "Show me Pedrali chairs"
+Return:
+{
+  "reply": "I can search for Pedrali chairs.",
+  "action": {
+    "type": "search",
+    "query": "chairs",
+    "filterKey": null,
+    "value": null,
+    "metric": null,
+    "field": null,
+    "conditions": [
+      { "field": "brand_name", "operator": "equals", "value": "Pedrali" },
+      { "field": "category", "operator": "contains", "value": "chair" }
+    ]
+  }
+}
+
+User: "Show me Pedrali armchairs"
+Return:
+{
+  "reply": "I can search for Pedrali armchairs.",
+  "action": {
+    "type": "search",
+    "query": "armchairs",
+    "filterKey": null,
+    "value": null,
+    "metric": null,
+    "field": null,
+    "conditions": [
+      { "field": "brand_name", "operator": "equals", "value": "Pedrali" },
+      { "field": "category", "operator": "contains", "value": "armchair" }
+    ]
   }
 }
 
