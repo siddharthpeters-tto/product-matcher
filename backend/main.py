@@ -138,7 +138,9 @@ class ChatAction(BaseModel):
     query: Optional[str] = None
     filterKey: Optional[str] = None
     value: Optional[str] = None
-
+    metric: Optional[str] = None
+    field: Optional[str] = None
+    
 class ChatResponse(BaseModel):
     reply: str
     action: Optional[ChatAction] = None
@@ -213,6 +215,40 @@ def call_llm_for_chat(prompt: str) -> dict:
             "action": None,
         }
     
+def run_aggregate_action(action: dict):
+    metric = action.get("metric")
+    field = action.get("field")
+    value = action.get("value")
+
+    if metric != "count":
+        raise ValueError("Unsupported aggregate metric")
+
+    if field not in {"category", "brand_name"}:
+        raise ValueError("Unsupported aggregate field")
+
+    query = supabase.table("product_catalogue_flat").select("product_id")
+
+    if field == "category":
+        query = query.ilike("category_name", f"%{value}%")
+    elif field == "brand_name":
+        query = query.ilike("brand_name", value.strip())
+
+    result = query.execute()
+
+    product_ids = {
+        row["product_id"]
+        for row in (result.data or [])
+        if row.get("product_id")
+    }
+
+    return {
+        "metric": metric,
+        "field": field,
+        "value": value,
+        "count": len(product_ids),
+    }
+}
+    
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
@@ -230,17 +266,85 @@ async def chat(req: ChatRequest):
             action = None
         else:
             action_type = action.get("type")
-            if action_type not in {"search", "filter"}:
+
+            if action_type not in {"search", "filter", "aggregate", None}:
                 action = None
+
+            elif action_type == "filter":
+                if action.get("filterKey") not in {"brand", "category"}:
+                    action = None
+                elif not action.get("value"):
+                    action = None
+                else:
+                    action = {
+                        "type": "filter",
+                        "query": None,
+                        "filterKey": action.get("filterKey"),
+                        "value": action.get("value"),
+                        "metric": None,
+                        "field": None,
+                    }
+
             elif action_type == "search":
                 if not action.get("query"):
                     action = None
-            elif action_type == "filter":
-                if action.get("filterKey") not in {"brand", "category"} or not action.get("value"):
+                else:
+                    action = {
+                        "type": "search",
+                        "query": action.get("query"),
+                        "filterKey": None,
+                        "value": None,
+                        "metric": None,
+                        "field": None,
+                    }
+
+            elif action_type == "aggregate":
+                metric = action.get("metric")
+                field = action.get("field")
+                value = action.get("value")
+
+                if metric not in {"count"}:
                     action = None
+                elif field not in {"category", "brand_name"}:
+                    action = None
+                elif not value:
+                    action = None
+                else:
+                    action = {
+                        "type": "aggregate",
+                        "query": None,
+                        "filterKey": None,
+                        "value": value,
+                        "metric": metric,
+                        "field": field,
+                    }
+
+            else:
+                action = None
+
+        aggregate_result = None
+
+        if action and action.get("type") == "aggregate":
+            try:
+                aggregate_result = run_aggregate_action(action)
+                count = aggregate_result["count"]
+                value = aggregate_result["value"]
+                field = aggregate_result["field"]
+
+                if field == "category":
+                    reply = f"We currently have {count} products in the category '{value}'."
+                elif field == "brand_name":
+                    reply = f"We currently have {count} products for the brand '{value}'."
+            except Exception as e:
+                print("aggregate error:", e)
+                aggregate_result = None
+                action = None
+                reply = "I couldn’t run that catalogue query reliably. Try rephrasing it as a search."
+
         return {
             "reply": reply,
-            "action": action
+            "action": action,
+            "aggregate_result": aggregate_result,
         }
 
     except Exception as e:
