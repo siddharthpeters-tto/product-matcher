@@ -265,7 +265,15 @@ def run_aggregate_action(action: dict):
 async def chat(req: ChatRequest):
     try:
         prompt = build_chat_prompt(req)
-        raw = call_llm_for_chat(prompt)
+        raw = {
+            "reply": "Testing aggregate.",
+            "action": {
+                "type": "aggregate",
+                "metric": "count",
+                "field": "category",
+                "value": "armchair"
+            }
+        }
         print("RAW CHAT RESPONSE:", raw)
 
         if not isinstance(raw, dict):
