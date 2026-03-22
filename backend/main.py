@@ -66,20 +66,11 @@ def canonicalize_filter_value(action, context):
 
     options = []
     if filter_key == "brand":
-        options = [
-            x.get("value")
-            for x in (context.get("brandBreakdown") or [])
-            if x.get("value")
-        ]
+        options = [x.get("value") for x in (context.get("brandBreakdown") or []) if x.get("value")]
     elif filter_key == "category":
-        options = [
-            x.get("value")
-            for x in (context.get("categoryBreakdown") or [])
-            if x.get("value")
-        ]
+        options = [x.get("value") for x in (context.get("categoryBreakdown") or []) if x.get("value")]
 
     raw_lower = raw_value.lower()
-
     for opt in options:
         if opt.lower() == raw_lower:
             action["value"] = opt
@@ -264,7 +255,6 @@ def run_aggregate_action(action: dict):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     try:
-        prompt = build_chat_prompt(req)
         raw = {
             "reply": "Testing aggregate.",
             "action": {
@@ -274,13 +264,6 @@ async def chat(req: ChatRequest):
                 "value": "armchair"
             }
         }
-        print("RAW CHAT RESPONSE:", raw)
-
-        if not isinstance(raw, dict):
-            raw = {
-                "reply": "I couldn’t interpret that response reliably.",
-                "action": None,
-            }
 
         reply = raw.get("reply") or "I can help refine the current results."
         action = raw.get("action")
@@ -290,7 +273,6 @@ async def chat(req: ChatRequest):
 
         action = canonicalize_filter_value(action, req.context or {})
 
-        # Normalize action
         if not action or not action.get("type"):
             action = None
         else:
