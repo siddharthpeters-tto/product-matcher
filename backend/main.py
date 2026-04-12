@@ -429,6 +429,7 @@ def fuse_text_results(
 
 
 def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
+    q = normalize_query(query_text or "")
     tokens = set(q.split())
 
     for r in results:
