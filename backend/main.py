@@ -10,13 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 import json
 
-
-import base64
 import torch, clip
 import numpy as np
-import gc
 from PIL import Image as PILImage
-from rembg import remove, new_session
 
 # --------------------------
 # Env & Clients
@@ -47,18 +43,6 @@ if MEILI_URL and MEILI_MASTER_KEY:
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
-# --------- BG removal session (reused) ---------
-try:
-    _rm_session = new_session("u2net")
-    print("✅ Using u2net for background removal (lightweight)")
-    # Commenting out the better rembg model because it takes up too much memory.
-    #_rm_session = new_session("birefnet-general-lite")
-    #print("✅ Using birefnet-general-lite for background removal")
-except Exception as e:
-    #print(f"⚠️ Failed to load birefnet-general-lite ({e}), falling back to u2net")
-    #_rm_session = new_session("u2net")
-    print(f"❌ Failed to load u2net: {e}")
-    _rm_session = None
 
 # Adding Meilisearch helpers
 STOP_WORDS = {
@@ -284,14 +268,6 @@ def fuse_text_results(
 
     return results
 
-def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
-    # rembg may return RGBA; flatten to RGB so JPEG saves/embeds cleanly
-    if pil_img.mode == "RGBA":
-        bg = PILImage.new("RGB", pil_img.size, (255, 255, 255))
-        bg.paste(pil_img, mask=pil_img.split()[3])
-        return bg
-    return pil_img.convert("RGB")
-
 
 
 def _normalize(nd: np.ndarray) -> np.ndarray:
@@ -336,7 +312,6 @@ async def search(
     conditions_json: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
     threshold: float = Query(0.25, ge=0.0, le=1.0),
-    remove_bg: int = Query(0),
 ):
     """Search products.
 
@@ -368,26 +343,6 @@ async def search(
             img.thumbnail((1024, 1024))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid image upload")
-
-        if remove_bg == 1:
-            try:
-                cut = remove(img, session=_rm_session)
-                img = _ensure_rgb_jpeg_safe(cut)
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=92)
-                preview_data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"BG removal failed: {e}")
-            finally:
-                try:
-                    del cut
-                except Exception:
-                    pass
-                try:
-                    del buf
-                except Exception:
-                    pass
-                gc.collect()
 
         qvec = encode_image(img)[0].tolist()
 
