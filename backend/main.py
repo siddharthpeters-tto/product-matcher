@@ -284,16 +284,22 @@ def meili_text_search(
                     "score": score
                 }
 
-    hits = [v["hit"] for v in best_hits.values()]
+    scored_hits = sorted(
+        best_hits.values(),
+        key=lambda x: x["score"],
+        reverse=True,
+    )
 
     out = []
-    for rank, hit in enumerate(hits, start=1):
+    for rank, item in enumerate(scored_hits, start=1):
+        hit = item["hit"]
         out.append({
             "variant_id": hit.get("id"),
             "meili_rank": rank,
-            "meili_score": 1.0 / (rank + 20.0),
+            "meili_score": item["score"],
             "meili_hit": hit,
         })
+    
     return out
 
 def normalize_clip_score(raw: float | None, threshold: float) -> float:
@@ -462,7 +468,89 @@ def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
     return results
 
+def clip_rerank_text_candidates(
+    query_text: str,
+    meili_rows: list[dict],
+    embedding_model: str = "ViT-B/32",
+    max_candidates: int = 60,
+) -> list[dict]:
+    """
+    Rerank Meili text candidates using CLIP text->image similarity.
 
+    Returns rows shaped like:
+    [
+        {
+            "product_variant_id": "<uuid>",
+            "similarity": 0.73,
+            "image_id": "<uuid>",
+            "image_url": "https://..."
+        },
+        ...
+    ]
+    """
+
+    if not query_text or not meili_rows:
+        return []
+
+    variant_ids = []
+    seen = set()
+    for row in meili_rows:
+        vid = row.get("variant_id")
+        if vid and vid not in seen:
+            seen.add(vid)
+            variant_ids.append(vid)
+
+    if not variant_ids:
+        return []
+
+    variant_ids = variant_ids[:max_candidates]
+
+    query_vec = encode_text(query_text)[0].astype(np.float32)
+
+    result = (
+        supabase.table("product_images")
+        .select("id, product_variant_id, image_url, embedding, embedding_model, sort_order")
+        .in_("product_variant_id", variant_ids)
+        .not_.is_("embedding", "null")
+        .execute()
+    )
+
+    rows = result.data or []
+    if not rows:
+        return []
+
+    best_by_variant: dict[str, dict] = {}
+
+    for row in rows:
+        if embedding_model and row.get("embedding_model") not in {None, embedding_model}:
+            continue
+
+        vid = row.get("product_variant_id")
+        emb = row.get("embedding")
+        if not vid or emb is None:
+            continue
+
+        try:
+            img_vec = np.asarray(emb, dtype=np.float32)
+        except Exception:
+            continue
+
+        if img_vec.ndim != 1:
+            continue
+
+        img_vec = img_vec / np.clip(np.linalg.norm(img_vec), 1e-12, None)
+        similarity = float(np.dot(query_vec, img_vec))
+
+        current = best_by_variant.get(vid)
+        if current is None or similarity > current["similarity"]:
+            best_by_variant[vid] = {
+                "product_variant_id": vid,
+                "similarity": similarity,
+                "image_id": row.get("id"),
+                "image_url": row.get("image_url"),
+            }
+
+    return list(best_by_variant.values())
 
 def _normalize(nd: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(nd, axis=-1, keepdims=True)
@@ -592,7 +680,6 @@ async def search(
     text_query = normalize_query(query_text)
 
     vec_rows = []
-
     meili_rows = []
     mdur = 0
     start = time.perf_counter()
@@ -605,9 +692,15 @@ async def search(
             detected_category_field=None,
             detected_category_value=None,
         )
+
+        vec_rows = clip_rerank_text_candidates(
+            query_text=query_text,
+            meili_rows=meili_rows,
+        )
+
         mdur = (time.perf_counter() - start) * 1000
         print(
-            f"Meili text search took {mdur:.2f} ms | "
+            f"Meili text + Clip search took {mdur:.2f} ms | "
             f"raw='{query_text}' | normalized='{normalized_text}' | "
             f"brand='{brand}' | category_field='{category_field}' | "
             f"category_value='{category_value}' | text_query='{text_query}'"
