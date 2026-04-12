@@ -38,12 +38,80 @@ function getMatchScore(item) {
   return ((imageScore ?? fallbackScore ?? 0) * 100).toFixed(1);
 }
 
+function ResultGrid({ title, items = [] }) {
+  return (
+    <section className="mt-8">
+      <div className="mb-6 text-sm font-medium text-gray-700">
+        {title} · {items.length} matches
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {items.map((item, i) => {
+          const imagePath = getImagePath(item);
+          const resolvedImage = resolveImageUrl(imagePath);
+          const matchScore = getMatchScore(item);
+
+          return (
+            <div
+              key={`${title}-${item.variant_id || item.id || i}-${i}`}
+              className="p-4 border border-gray-200 rounded-xl shadow-sm bg-white"
+            >
+              <a
+                href={item.product_url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-indigo-700 font-semibold text-base underline truncate hover:text-indigo-900"
+              >
+                {item.variant_name || item.product_name || "Untitled Product"}
+              </a>
+
+              <div className="text-sm text-gray-600 truncate">
+                {item.brand_name || "Unknown brand"}
+              </div>
+
+              <div className="text-sm text-gray-500 truncate">
+                {item.category_name || ""}
+              </div>
+
+              <div className="mt-2 text-sm font-medium text-indigo-700">
+                Match: {matchScore}%
+              </div>
+
+              {imagePath ? (
+                <img
+                  src={resolvedImage}
+                  alt={item.variant_name || item.product_name || "Product image"}
+                  className="w-full h-40 object-contain rounded-md mt-3 bg-white border"
+                  onError={() => {
+                    console.error("IMAGE FAILED", {
+                      item,
+                      raw: imagePath,
+                      resolved: resolvedImage,
+                    });
+                  }}
+                />
+              ) : (
+                <div className="w-full h-40 rounded-md mt-3 bg-gray-50 border flex items-center justify-center text-xs text-gray-400">
+                  No image
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function ResultsStage({
   file,
   previewUrl,
   loading,
   results = [],
   rawResults = [],
+  clipResults = [],
+  meiliResults = [],
+  hybridResults = [],
   message,
   filters = { brand: "all", category: "all" },
   setFilters,
@@ -191,62 +259,22 @@ export default function ResultsStage({
           </div>
         </div>
       ) : (
-        <section className="mt-8">
-          <div className="mb-6 text-sm font-medium text-gray-700">
-            {results.length} matches found
-          </div>
+        <>
+          <ResultGrid
+            title="Hybrid Results"
+            items={hybridResults.length ? hybridResults : results}
+          />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {results.map((item, i) => {
-              const imagePath = getImagePath(item);
-              const resolvedImage = resolveImageUrl(imagePath);
-              const matchScore = getMatchScore(item);
+          <ResultGrid
+            title="CLIP Results"
+            items={clipResults}
+          />
 
-              return (
-                <div
-                  key={`${item.variant_id || item.id || i}-${i}`}
-                  className="p-4 border border-gray-200 rounded-xl shadow-sm bg-white"
-                >
-                  <a
-                    href={item.product_url || "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-indigo-700 font-semibold text-base underline truncate hover:text-indigo-900"
-                  >
-                    {item.variant_name || item.product_name || "Untitled Product"}
-                  </a>
-
-                  <div className="text-sm text-gray-600 truncate">
-                    {item.brand_name || "Unknown brand"}
-                  </div>
-
-                  <div className="mt-2 text-sm font-medium text-indigo-700">
-                    Match: {matchScore}%
-                  </div>
-
-                  {imagePath ? (
-                    <img
-                      src={resolvedImage}
-                      alt={item.variant_name || item.product_name || "Product image"}
-                      className="w-full h-40 object-contain rounded-md mt-3 bg-white border"
-                      onError={() => {
-                        console.error("IMAGE FAILED", {
-                          item,
-                          raw: imagePath,
-                          resolved: resolvedImage,
-                        });
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-40 rounded-md mt-3 bg-gray-50 border flex items-center justify-center text-xs text-gray-400">
-                      No image
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+          <ResultGrid
+            title="Meili Results"
+            items={meiliResults}
+          />
+        </>
       )}
     </section>
   );

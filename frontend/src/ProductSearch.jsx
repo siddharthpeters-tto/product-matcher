@@ -50,16 +50,26 @@ const queryParams = new URLSearchParams({
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data?.message || "Search failed");
+    throw new Error(data?.message || data?.detail || "Search failed");
   }
-
-  const rows = data.results || [];
+  const hybridRows = data.hybrid_results || data.results || [];
+  const clipRows = data.clip_results || [];
+  const meiliRows = data.meili_results || [];
 
   return {
-    raw: rows,
-    rawResultsCount: rows.length,
-    results: rows,
-    groupedResults: groupResults(rows),
+    raw: hybridRows,
+    rawResultsCount: hybridRows.length,
+
+    results: hybridRows,
+    hybridResults: hybridRows,
+    clipResults: clipRows,
+    meiliResults: meiliRows,
+
+    groupedResults: groupResults(hybridRows),
+    groupedHybridResults: groupResults(hybridRows),
+    groupedClipResults: groupResults(clipRows),
+    groupedMeiliResults: groupResults(meiliRows),
+
     preview: data.preview || null,
     debug: data.debug || null,
   };

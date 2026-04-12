@@ -84,31 +84,11 @@ def normalize_query(raw_query: str) -> str:
 
     return " ".join(cleaned).strip()
 
-def build_clip_query(
-    query_text: str,
-    detected_brand: str | None = None,
-    detected_category_value: str | None = None,
-) -> str:
-    q = normalize_query(query_text or "")
-    tokens = q.split()
-
-    remove_tokens = set()
-
-    if detected_brand:
-        remove_tokens.update(normalize_query(detected_brand).split())
-
-    if detected_category_value:
-        remove_tokens.update(normalize_query(detected_category_value).split())
-
-    kept = [t for t in tokens if t not in remove_tokens]
-
-    return " ".join(kept).strip() or q
-
 def detect_brand_from_query(query: str) -> str | None:
     if not meili_index:
         return None
 
-    normalized_query = normalize_query(query)
+    normalized_query = normalize_text(query)
     query_tokens = set(normalized_query.split())
 
     result = meili_index.search("", {
@@ -120,7 +100,7 @@ def detect_brand_from_query(query: str) -> str | None:
     brands = sorted(brand_counts.keys(), key=len, reverse=True)
 
     for brand in brands:
-        normalized_brand = normalize_query(brand)
+        normalized_brand = normalize_text(brand)
         if normalized_brand and normalized_brand in normalized_query:
             return brand
 
@@ -139,55 +119,39 @@ def detect_brand_from_query(query: str) -> str | None:
     return None
 
 
-def _get_facet_values(field: str) -> list[str]:
+def detect_category_from_query(query: str) -> str | None:
     if not meili_index:
-        return []
+        return None
+
+    normalized_query = normalize_text(query)
+    query_tokens = set(normalized_query.split())
 
     result = meili_index.search("", {
-        "facets": [field],
+        "facets": ["categories"],
         "limit": 0
     })
     facet_distribution = result.get("facetDistribution", {}) or {}
-    values = facet_distribution.get(field, {}) or {}
-    return sorted(values.keys(), key=len, reverse=True)
+    category_counts = facet_distribution.get("categories", {}) or {}
+    categories = sorted(category_counts.keys(), key=len, reverse=True)
 
-
-def detect_category_from_query(query: str) -> tuple[str | None, str | None]:
-    """
-    Returns (field_name, matched_value), where field_name is one of:
-    - subcategory
-    - parent_category
-    - categories
-    """
-    if not meili_index:
-        return (None, None)
-
-    normalized_query = normalize_query(query)
-    query_tokens = set(normalized_query.split())
+    for category in categories:
+        normalized_category = normalize_text(category)
+        if normalized_category and normalized_category in normalized_query:
+            return normalized_category
 
     candidates = []
-
-    for field in ["subcategory", "parent_category", "categories"]:
-        for raw_value in _get_facet_values(field):
-            normalized_value = normalize_query(raw_value)
-            if not normalized_value:
-                continue
-
-            # exact phrase containment first
-            if normalized_value in normalized_query:
-                return (field, raw_value)
-
-            value_tokens = normalized_value.split()
-            matched_tokens = [t for t in value_tokens if t in query_tokens]
-            if matched_tokens:
-                candidates.append((field, raw_value, len(matched_tokens), len(normalized_value)))
+    for category in categories:
+        normalized_category = normalize_text(category)
+        category_tokens = normalized_category.split()
+        matched_tokens = [t for t in category_tokens if t in query_tokens]
+        if matched_tokens:
+            candidates.append((normalized_category, len(matched_tokens), len(normalized_category)))
 
     if candidates:
-        candidates.sort(key=lambda x: (x[2], x[3]), reverse=True)
-        field, raw_value, _, _ = candidates[0]
-        return (field, raw_value)
+        candidates.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        return candidates[0][0]
 
-    return (None, None)
+    return None
 
 
 def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]:
@@ -207,13 +171,7 @@ def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]
         "value": brand
     }]
 
-
-def build_meili_filter(
-    conditions: list | None,
-    active_only: bool = True,
-    detected_category_field: str | None = None,
-    detected_category_value: str | None = None,
-) -> str | None:
+def build_meili_filter(conditions: list | None, active_only: bool = True) -> str | None:
     filters = []
 
     if active_only:
@@ -227,105 +185,56 @@ def build_meili_filter(
         if not value:
             continue
 
-        if field == "brand_name" and operator in {"equals", "contains"}:
-            filters.append(f'brand_name = "{value}"')
+        if field == "brand_name":
+            if operator in {"equals", "contains"}:
+                filters.append(f'brand_name = "{value}"')
 
-        elif field == "category" and operator in {"equals", "contains"}:
-            filters.append(
-                f'(subcategory = "{value}" OR parent_category = "{value}" OR categories = "{value}")'
-            )
-
-    if detected_category_field and detected_category_value:
-        safe_value = detected_category_value.strip().replace('"', '\\"')
-        if detected_category_field == "categories":
-            filters.append(f'categories = "{safe_value}"')
-        else:
-            filters.append(f'{detected_category_field} = "{safe_value}"')
+        elif field == "category":
+            # categories is an array in Meili docs; subcategory is also indexed
+            if operator == "equals":
+                filters.append(f'categories = "{value}"')
+            elif operator == "contains":
+                # no true contains filter for arrays, so lean on lexical query for the term
+                pass
 
     return " AND ".join(filters) if filters else None
 
-def meili_text_search(
-    text: str,
-    conditions: list | None,
-    limit: int = 50,
-    detected_category_field: str | None = None,
-    detected_category_value: str | None = None,
-) -> list[dict]:
+def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> list[dict]:
     if not meili_index:
         return []
 
     q = normalize_query(text or "")
+    if not q and not conditions:
+        return []
 
     params = {
         "limit": limit,
     }
 
-    filter_text = build_meili_filter(
-        conditions,
-        active_only=True,
-        detected_category_field=detected_category_field,
-        detected_category_value=detected_category_value,
-    )
+    filter_text = build_meili_filter(conditions, active_only=True)
     if filter_text:
         params["filter"] = filter_text
 
-    print("MEILI QUERY:", q)
-    print("MEILI FILTER:", params.get("filter"))
-    print("MEILI PARAMS:", params)
-    tokens = normalize_query(text).split()
-
-    queries = [
-        " ".join(tokens),                 # full query
-        " ".join(tokens[1:]),             # drop first
-        " ".join(tokens[:-1]),            # drop last
-    ]
-
-    best_hits = {}
-
-    for q_idx, q_variant in enumerate(queries):
-        if not q_variant:
-            continue
-
-        res = meili_index.search(q_variant, {
-            **params,
-            "matchingStrategy": "last"
-        })
-
-        for rank, h in enumerate(res.get("hits", []), start=1):
-            vid = h.get("id")
-            if not vid:
-                continue
-
-            score = 1.0 / (rank + 20.0)
-
-            if vid not in best_hits or score > best_hits[vid]["score"]:
-                best_hits[vid] = {
-                    "hit": h,
-                    "score": score
-                }
-
-    scored_hits = sorted(
-        best_hits.values(),
-        key=lambda x: x["score"],
-        reverse=True,
-    )
+    result = meili_index.search(q, params)
+    hits = result.get("hits", []) or []
 
     out = []
-    for rank, item in enumerate(scored_hits, start=1):
-        hit = item["hit"]
+    for rank, hit in enumerate(hits, start=1):
         out.append({
             "variant_id": hit.get("id"),
             "meili_rank": rank,
-            "meili_score": item["score"],
+            "meili_score": 1.0 / (rank + 20.0),  # RRF-style soft score
             "meili_hit": hit,
         })
-    
     return out
+
 
 def normalize_clip_score(raw: float | None, threshold: float) -> float:
     if raw is None:
         return 0.0
-    return max(0.0, float(raw))
+    if raw <= threshold:
+        return 0.0
+    return min(1.0, max(0.0, (raw - threshold) / max(1e-6, (1.0 - threshold))))
 
 def fetch_rows_for_variant_ids(variant_ids: list[str]) -> dict[str, dict]:
     if not variant_ids:
@@ -367,116 +276,52 @@ def fuse_text_results(
     meili_rows: list[dict],
     threshold: float,
     top_k: int,
-    meili_weight: float,
-    clip_weight: float,
 ) -> list[dict]:
-    combined: dict[str, dict] = {}
-    RRF_K = 20.0
+    combined = {}
 
-    # Vector side
-    sorted_vec_rows = sorted(
-        vec_rows,
-        key=lambda x: float(x.get("similarity") or 0.0),
-        reverse=True,
-    )
-
-    max_clip_score = max(
-        [float(r.get("similarity") or 0.0) for r in sorted_vec_rows],
-        default=0.0,
-    )
-
-    for clip_rank, r in enumerate(sorted_vec_rows, start=1):
+    for r in vec_rows:
         variant_id = r.get("product_variant_id")
         if not variant_id:
             continue
 
-        raw_clip_score = float(r.get("similarity") or 0.0)
-        normalized_clip_score = 0.0
-        if max_clip_score > 0:
-            normalized_clip_score = raw_clip_score / max_clip_score
-
         combined[variant_id] = {
             "variant_id": variant_id,
             "clip_row": r,
-            "clip_score": raw_clip_score,
-            "clip_score_normalized": normalized_clip_score,
-            "clip_rank": clip_rank,
+            "clip_score": normalize_clip_score(float(r.get("similarity") or 0), threshold),
             "meili_score": 0.0,
             "meili_rank": None,
-            "meili_hit": None,
         }
-
-    # Meili side
-    max_meili_score = max(
-        [float(r.get("meili_score") or 0.0) for r in meili_rows],
-        default=0.0,
-    )
 
     for r in meili_rows:
         variant_id = r.get("variant_id")
         if not variant_id:
             continue
 
-        raw_meili_score = float(r.get("meili_score") or 0.0)
-        normalized_meili_score = 0.0
-        if max_meili_score > 0:
-            normalized_meili_score = raw_meili_score / max_meili_score
-
         item = combined.setdefault(variant_id, {
             "variant_id": variant_id,
             "clip_row": None,
             "clip_score": 0.0,
-            "clip_score_normalized": 0.0,
-            "clip_rank": None,
             "meili_score": 0.0,
             "meili_rank": None,
-            "meili_hit": None,
         })
+        item["meili_score"] = max(item["meili_score"], float(r.get("meili_score") or 0))
+        item["meili_rank"] = r.get("meili_rank")
 
-        if raw_meili_score > item["meili_score"]:
-            item["meili_score"] = raw_meili_score
-            item["meili_score_normalized"] = normalized_meili_score
-            item["meili_rank"] = r.get("meili_rank")
-            item["meili_hit"] = r.get("meili_hit")
-
-    # Fuse
+    # weights:
+    # - lexical precision from Meili matters a lot for brand/model/category text
+    # - CLIP still helps on softer semantic terms
     for item in combined.values():
-        clip_rrf = 0.0
-        meili_rrf = 0.0
-
-        if item.get("clip_rank") is not None:
-            clip_rrf = 1.0 / (RRF_K + float(item["clip_rank"]))
-
-        if item.get("meili_rank") is not None:
-            meili_rrf = 1.0 / (RRF_K + float(item["meili_rank"]))
-
-        clip_score_component = 0.0
-        if item.get("clip_score_normalized") is not None:
-            clip_score_component = 0.30 * float(item.get("clip_score_normalized") or 0.0)
-
-        meili_score_component = 0.0
-        if item.get("meili_score_normalized") is not None:
-            meili_score_component = 0.15 * float(item.get("meili_score_normalized") or 0.0)
-
         item["final_score"] = (
-            (clip_weight * clip_rrf) +
-            (meili_weight * meili_rrf) +
-            clip_score_component +
-            meili_score_component
+            0.65 * item["meili_score"] +
+            0.35 * item["clip_score"]
         )
 
-    ranked = sorted(
-        combined.values(),
-        key=lambda x: float(x.get("final_score") or 0.0),
-        reverse=True,
-    )[:top_k]
-
+    ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
     rows_by_variant = fetch_rows_for_variant_ids([x["variant_id"] for x in ranked])
 
     results = []
     for item in ranked:
         row = rows_by_variant.get(item["variant_id"])
-
         if not row:
             clip_row = item.get("clip_row") or {}
             row = {
@@ -497,11 +342,10 @@ def fuse_text_results(
             "image_id": row.get("image_id"),
             "image_url": row.get("image_url"),
             "image_path": row.get("image_url"),
-            "score": item.get("final_score"),
-            "clip_score": item.get("clip_score"),
-            "meili_score": item.get("meili_score"),
-            "clip_rank": item.get("clip_rank"),
-            "meili_rank": item.get("meili_rank"),
+            "score": item["final_score"],
+            "clip_score": item["clip_score"],
+            "meili_score": item["meili_score"],
+            "meili_rank": item["meili_rank"],
             "variant_id": row.get("variant_id"),
             "variant_name": row.get("variant_name"),
             "model_number": row.get("model_number"),
@@ -516,26 +360,6 @@ def fuse_text_results(
 
     return results
 
-def vector_text_search(
-    query_text: str,
-    top_k: int,
-    threshold: float,
-) -> list[dict]:
-    if not query_text.strip():
-        return []
-
-    query_vec = encode_text(query_text)[0].tolist()
-
-    resp = supabase.rpc(
-        "match_product_images",
-        {
-            "query_embedding": query_vec,
-            "match_count": int(top_k),
-            "threshold": float(threshold),
-        },
-    ).execute()
-
-    return resp.data or []
 
 def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
     q = normalize_query(query_text or "")
@@ -571,110 +395,7 @@ def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
     results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
     return results
 
-def clip_rerank_text_candidates(
-    query_text: str,
-    meili_rows: list[dict],
-    embedding_model: str = "ViT-B/32",
-    max_candidates: int = 60,
-) -> list[dict]:
-    """
-    Rerank Meili text candidates using CLIP text->image similarity.
 
-    Returns rows shaped like:
-    [
-        {
-            "product_variant_id": "<uuid>",
-            "similarity": 0.73,
-            "image_id": "<uuid>",
-            "image_url": "https://..."
-        },
-        ...
-    ]
-    """
-
-    if not query_text or not meili_rows:
-        return []
-
-    variant_ids = []
-    seen = set()
-    for row in meili_rows:
-        vid = row.get("variant_id")
-        if vid and vid not in seen:
-            seen.add(vid)
-            variant_ids.append(vid)
-
-    if not variant_ids:
-        return []
-
-    variant_ids = variant_ids[:max_candidates]
-
-    query_vec = encode_text(query_text)[0].astype(np.float32)
-
-    result = (
-        supabase.table("product_images")
-        .select("id, product_variant_id, image_url, embedding, embedding_model, sort_order")
-        .in_("product_variant_id", variant_ids)
-        .not_.is_("embedding", "null")
-        .execute()
-    )
-
-    rows = result.data or []
-    print("CLIP RERANK candidate variant_ids:", len(variant_ids))
-    print("CLIP RERANK embedding rows fetched:", len(rows))
-    if not rows:
-        return []
-
-    best_by_variant: dict[str, dict] = {}
-
-    for row in rows:
-        vid = row.get("product_variant_id")
-        emb = row.get("embedding")
-        if not vid or emb is None:
-            continue
-
-        # Be tolerant on model name for now
-        row_model = row.get("embedding_model")
-        if embedding_model and row_model and embedding_model not in str(row_model):
-            pass
-
-        try:
-            if isinstance(emb, str):
-                emb = json.loads(emb)
-
-            img_vec = np.asarray(emb, dtype=np.float32).reshape(-1)
-        except Exception:
-            continue
-
-        if img_vec.size == 0:
-            continue
-
-        img_vec = img_vec / np.clip(np.linalg.norm(img_vec), 1e-12, None)
-        similarity = float(np.dot(query_vec, img_vec))
-
-        current = best_by_variant.get(vid)
-        if current is None or similarity > current["similarity"]:
-            best_by_variant[vid] = {
-                "product_variant_id": vid,
-                "similarity": similarity,
-                "image_id": row.get("id"),
-                "image_url": row.get("image_url"),
-            }
-    print("CLIP RERANK variants scored:", len(best_by_variant))
-    if best_by_variant:
-        top_preview = sorted(
-            best_by_variant.values(),
-            key=lambda x: x["similarity"],
-            reverse=True
-        )[:5]
-        print("CLIP RERANK top similarities:", [
-            {
-                "variant_id": x["product_variant_id"],
-                "similarity": round(float(x["similarity"]), 4),
-            }
-            for x in top_preview
-        ])
-
-    return list(best_by_variant.values())
 
 def _normalize(nd: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(nd, axis=-1, keepdims=True)
@@ -718,17 +439,14 @@ async def search(
     text: Optional[str] = Query(default=None),
     conditions_json: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
-    threshold: float = Query(0.05, ge=0.0, le=1.0),
-    semantic_weight: float = Query(0.65, ge=0.0, le=1.0),
+    threshold: float = Query(0.25, ge=0.0, le=1.0),
 ):
     """Search products.
 
     Rules:
     - If an image is uploaded, use vector image search.
-    - Otherwise use parallel hybrid text search:
-      - CLIP text -> vector retrieval across full corpus
-      - Meilisearch lexical retrieval across full corpus
-      - rank fusion on variant_id
+    - Otherwise use text search with Meilisearch + CLIP fusion.
+    - Optional structured conditions are applied to the Meilisearch path.
     """
     if not file and not (text and text.strip()) and not conditions_json:
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
@@ -792,67 +510,65 @@ async def search(
 
         results = [map_rpc_row(r) for r in rows]
         results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
-        return {
-            "count": len(results),
-            "results": results[:top_k],
-            "preview": preview_data_url,
-        }
+        return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
 
     # ------------------
-    # Plain text search → CLIP ONLY
+    # Plain text search → Meili + CLIP hybrid
     # ------------------
     query_text = (text or "").strip()
     normalized_text = normalize_query(query_text)
 
-    start = time.perf_counter()
+    brand = detect_brand_from_query(query_text)
+    category = detect_category_from_query(query_text)
 
+    effective_conditions = add_brand_condition(conditions, brand)
+    text_query = category if category else (normalized_text or query_text)
+
+    # Encode text for CLIP vector search
+    vec_rows = []
     try:
-        vec_rows = vector_text_search(
-            query_text=query_text,
-            top_k=int(top_k),
-            threshold=float(threshold),
+        qvec = encode_text(query_text)[0].tolist()
+        start_vec = time.perf_counter()
+        resp = supabase.rpc(
+            "match_product_images",
+            {
+                "query_embedding": qvec,
+                "match_count": int(top_k) * 3,
+                "threshold": float(threshold),
+            },
+        ).execute()
+        dur_vec = (time.perf_counter() - start_vec) * 1000
+        print(f"RPC/vector (text) took {dur_vec:.2f} ms for top_k={int(top_k)*3}, threshold={threshold}")
+        vec_rows = resp.data or []
+    except Exception as e:
+        print(f"Vector search failed for text query: {e}")
+
+    meili_rows = []
+    mdur = 0
+    start = time.perf_counter()
+    try:
+        meili_rows = meili_text_search(
+            text=text_query,
+            conditions=effective_conditions,
+            limit=max(int(top_k) * 3, 50),
+        )
+        mdur = (time.perf_counter() - start) * 1000
+        print(
+            f"Meili text search took {mdur:.2f} ms | "
+            f"raw='{query_text}' | normalized='{normalized_text}' | "
+            f"brand='{brand}' | category='{category}' | text_query='{text_query}'"
         )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Vector text search failed: {e}")
+        mdur = (time.perf_counter() - start) * 1000
+        print("Meili search failed:", e)
+        print(f"Meili text search took {mdur:.2f} ms")
 
-    duration = (time.perf_counter() - start) * 1000
-    print(
-        f"CLIP-only text search took {duration:.2f} ms | "
-        f"raw='{query_text}' | normalized='{normalized_text}' | "
-        f"vec_rows={len(vec_rows)} | threshold={threshold}"
+    results = fuse_text_results(
+        vec_rows=vec_rows,
+        meili_rows=meili_rows,
+        threshold=float(threshold),
+        top_k=int(top_k),
     )
+    results = boost_exact_matches(results, query_text)
 
-    def map_rpc_row(r: dict) -> dict:
-        return {
-            "image_id": r.get("image_id"),
-            "image_url": r.get("image_url"),
-            "image_path": r.get("image_url"),
-            "score": r.get("similarity"),
-            "clip_score": r.get("similarity"),
-            "variant_id": r.get("product_variant_id"),
-            "variant_name": r.get("variant_name"),
-            "model_number": r.get("model_number"),
-            "product_url": r.get("product_url"),
-            "product_id": r.get("product_id"),
-            "product_name": r.get("product_name"),
-            "brand_id": r.get("brand_id"),
-            "brand_name": r.get("brand_name"),
-            "product_category": r.get("product_category"),
-            "category_name": r.get("product_category"),
-        }
-
-    results = [map_rpc_row(r) for r in vec_rows]
-    results.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
-
-    return {
-        "count": len(results),
-        "results": results[:top_k],
-        "preview": preview_data_url,
-        "debug": {
-            "mode": "clip_only_text_search",
-            "raw_query": query_text,
-            "normalized_text": normalized_text,
-            "vector_candidate_count": len(vec_rows),
-            "threshold": threshold,
-        },
-    }
+    return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}

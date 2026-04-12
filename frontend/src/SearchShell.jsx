@@ -18,6 +18,9 @@ export default function SearchShell() {
   const [chatLoading, setChatLoading] = useState(false);
   const [threshold, setThreshold] = useState(0.25);
   const [results, setResults] = useState([]);
+  const [clipResults, setClipResults] = useState([]);
+  const [meiliResults, setMeiliResults] = useState([]);
+  const [hybridResults, setHybridResults] = useState([]);
   const [debugSearch, setDebugSearch] = useState(null); 
   const [semanticWeight, setSemanticWeight] = useState(0.5);
   const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
@@ -124,6 +127,10 @@ export default function SearchShell() {
       });
 
       setResults(data.results || []);
+      setHybridResults(data.hybridResults || data.results || []);
+      setClipResults(data.clipResults || []);
+      setMeiliResults(data.meiliResults || []);
+
       setMessage(`Found ${data.results?.length || 0} results.`);
     } catch (err) {
       setMessage(`Search failed: ${err.message}`);
@@ -210,6 +217,9 @@ export default function SearchShell() {
     setPreviewUrl("");
     setSearchText("");
     setResults([]);
+    setHybridResults([]);
+    setClipResults([]);
+    setMeiliResults([]);
     setMessage("Ready to search");
     setFilters({ brand: "all", category: "all" });
     setPendingAction(null);
@@ -278,6 +288,9 @@ export default function SearchShell() {
             loading={loading}
             results={filteredResults}
             rawResults={results}
+            clipResults={clipResults}
+            meiliResults={meiliResults}
+            hybridResults={hybridResults}
             message={message}
             filters={filters}
             setFilters={setFilters}
