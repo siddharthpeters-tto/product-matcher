@@ -718,7 +718,7 @@ async def search(
     text: Optional[str] = Query(default=None),
     conditions_json: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
-    threshold: float = Query(0.20, ge=0.0, le=1.0),
+    threshold: float = Query(0.05, ge=0.0, le=1.0),
     semantic_weight: float = Query(0.65, ge=0.0, le=1.0),
 ):
     """Search products.
@@ -799,86 +799,60 @@ async def search(
         }
 
     # ------------------
-    # Plain text search → PARALLEL HYBRID
+    # Plain text search → CLIP ONLY
     # ------------------
     query_text = (text or "").strip()
     normalized_text = normalize_query(query_text)
 
-    brand = detect_brand_from_query(query_text)
-    category_field, category_value = detect_category_from_query(query_text)
-
-    # Explicit UI filters should come from conditions_json.
-    # Auto-detected brand/category from the query should help Meili,
-    # but should not gate vector retrieval.
-    effective_conditions = add_brand_condition(conditions, brand)
-    text_query = normalize_query(query_text)
-
-    vec_rows = []
-    meili_rows = []
-
     start = time.perf_counter()
-
-    clip_weight = float(semantic_weight)
-    meili_weight = 1.0 - clip_weight
 
     try:
         vec_rows = vector_text_search(
             query_text=query_text,
-            top_k=max(int(top_k) * 5, 60),
+            top_k=int(top_k),
             threshold=float(threshold),
         )
     except Exception as e:
-        print("Vector text search failed:", e)
-
-    try:
-        meili_rows = meili_text_search(
-            text=text_query,
-            conditions=effective_conditions,
-            limit=max(int(top_k) * 5, 60),
-            detected_category_field=category_field,
-            detected_category_value=category_value,
-        )
-    except Exception as e:
-        print("Meili text search failed:", e)
+        raise HTTPException(status_code=502, detail=f"Vector text search failed: {e}")
 
     duration = (time.perf_counter() - start) * 1000
     print(
-        f"Hybrid text search took {duration:.2f} ms | "
+        f"CLIP-only text search took {duration:.2f} ms | "
         f"raw='{query_text}' | normalized='{normalized_text}' | "
-        f"brand='{brand}' | category_field='{category_field}' | "
-        f"category_value='{category_value}' | text_query='{text_query}' | "
-        f"vec_rows={len(vec_rows)} | meili_rows={len(meili_rows)} | "
-        f"semantic_weight={semantic_weight:.2f} | "
-        f"meili_weight={meili_weight:.2f} | clip_weight={clip_weight:.2f}"
+        f"vec_rows={len(vec_rows)} | threshold={threshold}"
     )
 
-    results = fuse_text_results(
-        vec_rows=vec_rows,
-        meili_rows=meili_rows,
-        threshold=float(threshold),
-        top_k=int(top_k),
-        meili_weight=meili_weight,
-        clip_weight=clip_weight,
-    )
+    def map_rpc_row(r: dict) -> dict:
+        return {
+            "image_id": r.get("image_id"),
+            "image_url": r.get("image_url"),
+            "image_path": r.get("image_url"),
+            "score": r.get("similarity"),
+            "clip_score": r.get("similarity"),
+            "variant_id": r.get("product_variant_id"),
+            "variant_name": r.get("variant_name"),
+            "model_number": r.get("model_number"),
+            "product_url": r.get("product_url"),
+            "product_id": r.get("product_id"),
+            "product_name": r.get("product_name"),
+            "brand_id": r.get("brand_id"),
+            "brand_name": r.get("brand_name"),
+            "product_category": r.get("product_category"),
+            "category_name": r.get("product_category"),
+        }
 
-    results = boost_exact_matches(results, query_text)
+    results = [map_rpc_row(r) for r in vec_rows]
+    results.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
 
     return {
         "count": len(results),
         "results": results[:top_k],
         "preview": preview_data_url,
         "debug": {
+            "mode": "clip_only_text_search",
             "raw_query": query_text,
             "normalized_text": normalized_text,
-            "detected_brand": brand,
-            "detected_category_field": category_field,
-            "detected_category_value": category_value,
-            "text_query": text_query,
-            "effective_conditions": effective_conditions,
-            "semantic_weight": semantic_weight,
-            "meili_weight": meili_weight,
-            "clip_weight": clip_weight,
             "vector_candidate_count": len(vec_rows),
-            "meili_candidate_count": len(meili_rows),
+            "threshold": threshold,
         },
     }
