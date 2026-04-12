@@ -84,6 +84,26 @@ def normalize_query(raw_query: str) -> str:
 
     return " ".join(cleaned).strip()
 
+def build_clip_query(
+    query_text: str,
+    detected_brand: str | None = None,
+    detected_category_value: str | None = None,
+) -> str:
+    q = normalize_query(query_text or "")
+    tokens = q.split()
+
+    remove_tokens = set()
+
+    if detected_brand:
+        remove_tokens.update(normalize_query(detected_brand).split())
+
+    if detected_category_value:
+        remove_tokens.update(normalize_query(detected_category_value).split())
+
+    kept = [t for t in tokens if t not in remove_tokens]
+
+    return " ".join(kept).strip() or q
+
 def detect_brand_from_query(query: str) -> str | None:
     if not meili_index:
         return None
@@ -734,8 +754,14 @@ async def search(
             detected_category_value=None,
         )
 
-        vec_rows = clip_rerank_text_candidates(
+        clip_query = build_clip_query(
             query_text=query_text,
+            detected_brand=brand,
+            detected_category_value=category_value,
+        )
+
+        vec_rows = clip_rerank_text_candidates(
+            query_text=clip_query,
             meili_rows=meili_rows,
         )
 
