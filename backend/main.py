@@ -540,20 +540,25 @@ def clip_rerank_text_candidates(
     best_by_variant: dict[str, dict] = {}
 
     for row in rows:
-        if embedding_model and row.get("embedding_model") not in {None, embedding_model}:
-            continue
-
         vid = row.get("product_variant_id")
         emb = row.get("embedding")
         if not vid or emb is None:
             continue
 
+        # Be tolerant on model name for now
+        row_model = row.get("embedding_model")
+        if embedding_model and row_model and embedding_model not in str(row_model):
+            pass
+
         try:
-            img_vec = np.asarray(emb, dtype=np.float32)
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+
+            img_vec = np.asarray(emb, dtype=np.float32).reshape(-1)
         except Exception:
             continue
 
-        if img_vec.ndim != 1:
+        if img_vec.size == 0:
             continue
 
         img_vec = img_vec / np.clip(np.linalg.norm(img_vec), 1e-12, None)
@@ -567,7 +572,6 @@ def clip_rerank_text_candidates(
                 "image_id": row.get("id"),
                 "image_url": row.get("image_url"),
             }
-
     print("CLIP RERANK variants scored:", len(best_by_variant))
     if best_by_variant:
         top_preview = sorted(
