@@ -385,8 +385,8 @@ def fuse_text_results(
     # - CLIP still helps on softer semantic terms
     for item in combined.values():
         item["final_score"] = (
-            0.65 * item["meili_score"] +
-            0.35 * item["clip_score"]
+            0.50 * item["meili_score"] +
+            0.50 * item["clip_score"]
         )
 
     ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
