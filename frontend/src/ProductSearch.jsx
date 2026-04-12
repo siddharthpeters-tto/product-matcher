@@ -58,6 +58,7 @@ export async function searchOneFile({
     results: rows,
     groupedResults: groupResults(rows),
     preview: data.preview || null,
+    debug: data.debug || null,
   };
 }
 
