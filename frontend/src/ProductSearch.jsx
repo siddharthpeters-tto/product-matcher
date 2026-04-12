@@ -18,14 +18,17 @@ export async function searchOneFile({
   apiUrl = API_URL,
   file,
   threshold = 0.25,
+  semanticWeight = 0.5,
   text = "",
   conditions = [],
   removeBg = false,
   signal,
 }) {
-  const queryParams = new URLSearchParams({
-    threshold: String(threshold),
-  });
+
+const queryParams = new URLSearchParams({
+  threshold: String(threshold),
+  semantic_weight: String(semanticWeight),
+});
 
   if (text?.trim()) queryParams.append("text", text.trim());
   if (removeBg) queryParams.append("remove_bg", "1");
@@ -66,6 +69,7 @@ export async function searchTextOnly({
   apiUrl = API_URL,
   text,
   threshold = 0.25,
+  semanticWeight = 0.5,
   conditions = [],
   signal,
 }) {
@@ -73,6 +77,7 @@ export async function searchTextOnly({
     apiUrl,
     text,
     threshold,
+    semanticWeight,
     conditions,
     signal,
   });
@@ -82,6 +87,7 @@ export async function runBatch({
   apiUrl = API_URL,
   items,
   threshold = 0.25,
+  semanticWeight = 0.5,
   text = "",
   conditions = [],
   signal,
@@ -96,6 +102,7 @@ export async function runBatch({
         file: item.file,
         text,
         threshold,
+        semanticWeight,
         conditions,
         signal,
       });

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 
+
 export default function SearchPanel({
   file,
   previewUrl,
@@ -11,6 +12,8 @@ export default function SearchPanel({
   runSearch,
   clearAll,
   handleFileChange,
+  semanticWeight,
+  setSemanticWeight,
   sendChatMessage,
   chatMessages,
   chatLoading,
@@ -200,6 +203,26 @@ export default function SearchPanel({
             </div>
           )}
         </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-3">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            Semantic Weight
+          </div>
+          <div className="text-sm font-semibold text-gray-800 mb-1">
+            {semanticWeight.toFixed(2)}
+          </div>
+          <div className="text-xs text-gray-500 mb-2">
+            0 = keyword-heavy, 1 = CLIP-heavy
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={semanticWeight}
+            onChange={(e) => setSemanticWeight(Number(e.target.value))}
+            className="w-full"
+          />
+        </div>        
 
         <div className="rounded-2xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">

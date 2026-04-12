@@ -19,6 +19,7 @@ export default function SearchShell() {
   const [threshold, setThreshold] = useState(0.25);
   const [results, setResults] = useState([]);
   const [debugSearch, setDebugSearch] = useState(null); 
+  const [semanticWeight, setSemanticWeight] = useState(0.5);
   const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
 
   const filterOptions = useMemo(() => {
@@ -100,14 +101,16 @@ export default function SearchShell() {
           file,
           text: query,
           threshold,
+          semanticWeight,
           conditions,
         });
       } else {
-        data = await searchTextOnly({
-          text: query,
-          threshold,
-          conditions,
-        });
+          data = await searchTextOnly({
+            text: query,
+            threshold,
+            semanticWeight,
+            conditions,
+          });
       }
       setDebugSearch({
         baseQuery,
@@ -294,6 +297,8 @@ export default function SearchShell() {
             chatLoading={chatLoading}
             message={message}
             runSearch={runSearch}
+            semanticWeight={semanticWeight}
+            setSemanticWeight={setSemanticWeight}
             sendChatMessage={sendChatMessage}
             clearAll={clearAll}
             handleFileChange={handleFileChange}

@@ -349,6 +349,8 @@ def fuse_text_results(
     meili_rows: list[dict],
     threshold: float,
     top_k: int,
+    meili_weight: float,
+    clip_weight: float,
 ) -> list[dict]:
     combined = {}
 
@@ -385,8 +387,8 @@ def fuse_text_results(
     # - CLIP still helps on softer semantic terms
     for item in combined.values():
         item["final_score"] = (
-            0.50 * item["meili_score"] +
-            0.50 * item["clip_score"]
+            meili_weight * item["meili_score"] +
+            clip_weight * item["clip_score"]
         )
 
     ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
@@ -595,6 +597,7 @@ async def search(
     conditions_json: Optional[str] = Query(default=None),
     top_k: int = Query(20, ge=1, le=100),
     threshold: float = Query(0.25, ge=0.0, le=1.0),
+    semantic_weight: float = Query(0.5, ge=0.0, le=1.0),
 ):
     """Search products.
 
@@ -683,6 +686,9 @@ async def search(
     meili_rows = []
     mdur = 0
     start = time.perf_counter()
+    clip_weight = float(semantic_weight)
+    meili_weight = 1.0 - clip_weight
+
 
     try:
         meili_rows = meili_text_search(
@@ -703,7 +709,9 @@ async def search(
             f"Meili text + Clip search took {mdur:.2f} ms | "
             f"raw='{query_text}' | normalized='{normalized_text}' | "
             f"brand='{brand}' | category_field='{category_field}' | "
-            f"category_value='{category_value}' | text_query='{text_query}'"
+            f"category_value='{category_value}' | text_query='{text_query}' |"
+            f"semantic_weight={semantic_weight:.2f} | "
+            f"meili_weight={meili_weight:.2f} | clip_weight={clip_weight:.2f}"            
         )
     except Exception as e:
         mdur = (time.perf_counter() - start) * 1000
@@ -715,6 +723,8 @@ async def search(
         meili_rows=meili_rows,
         threshold=float(threshold),
         top_k=int(top_k),
+        meili_weight=meili_weight,
+        clip_weight=clip_weight,
     )
     results = boost_exact_matches(results, query_text)
 
@@ -730,5 +740,8 @@ async def search(
             "detected_category_value": category_value,
             "text_query": text_query,
             "effective_conditions": effective_conditions,
+            "semantic_weight": semantic_weight,
+            "meili_weight": meili_weight,
+            "clip_weight": clip_weight,
         },
     }
