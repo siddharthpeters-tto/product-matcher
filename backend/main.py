@@ -41,7 +41,14 @@ if MEILI_URL and MEILI_MASTER_KEY:
 # Model (CLIP ViT-B/32)
 # --------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-B/32", device=device)
+model = None
+preprocess = None
+
+def get_clip():
+    global model, preprocess
+    if model is None or preprocess is None:
+        model, preprocess = clip.load("ViT-B/32", device=device)
+    return model, preprocess
 
 
 # Adding Meilisearch helpers
@@ -276,14 +283,15 @@ def _normalize(nd: np.ndarray) -> np.ndarray:
 
 
 def encode_image(image: PILImage.Image) -> np.ndarray:
+    model, preprocess = get_clip()
     x = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
         feat = model.encode_image(x).float()
     feat = feat.cpu().numpy().astype(np.float32)
     return _normalize(feat)
 
-
 def encode_text(text: str) -> np.ndarray:
+    model, _ = get_clip()
     tokens = clip.tokenize([text]).to(device)
     with torch.no_grad():
         feat = model.encode_text(tokens).float()
@@ -390,25 +398,7 @@ async def search(
     query_text = (text or "").strip()
     normalized_text = normalize_query(query_text)
 
-    qvec = encode_text(query_text)[0].tolist() if query_text else None
-
     vec_rows = []
-    if qvec is not None:
-        try:
-            start = time.perf_counter()
-            vresp = supabase.rpc(
-                "match_product_images",
-                {
-                    "query_embedding": qvec,
-                    "match_count": max(int(top_k) * 3, 50),
-                    "threshold": float(threshold),
-                },
-            ).execute()
-            vdur = (time.perf_counter() - start) * 1000
-            print(f"RPC/vector (text) took {vdur:.2f} ms")
-            vec_rows = vresp.data or []
-        except Exception as e:
-            print("Vector RPC failed:", e)
 
     meili_rows = []
     try:
