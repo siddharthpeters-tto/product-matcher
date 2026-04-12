@@ -532,6 +532,8 @@ def clip_rerank_text_candidates(
     )
 
     rows = result.data or []
+    print("CLIP RERANK candidate variant_ids:", len(variant_ids))
+    print("CLIP RERANK embedding rows fetched:", len(rows))
     if not rows:
         return []
 
@@ -565,6 +567,21 @@ def clip_rerank_text_candidates(
                 "image_id": row.get("id"),
                 "image_url": row.get("image_url"),
             }
+
+    print("CLIP RERANK variants scored:", len(best_by_variant))
+    if best_by_variant:
+        top_preview = sorted(
+            best_by_variant.values(),
+            key=lambda x: x["similarity"],
+            reverse=True
+        )[:5]
+        print("CLIP RERANK top similarities:", [
+            {
+                "variant_id": x["product_variant_id"],
+                "similarity": round(float(x["similarity"]), 4),
+            }
+            for x in top_preview
+        ])
 
     return list(best_by_variant.values())
 
