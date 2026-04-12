@@ -86,6 +86,93 @@ def normalize_query(raw_query: str) -> str:
 
     return " ".join(cleaned).strip()
 
+def detect_brand_from_query(query: str) -> str | None:
+    if not meili_index:
+        return None
+
+    normalized_query = normalize_text(query)
+    query_tokens = set(normalized_query.split())
+
+    result = meili_index.search("", {
+        "facets": ["brand_name"],
+        "limit": 0
+    })
+    facet_distribution = result.get("facetDistribution", {}) or {}
+    brand_counts = facet_distribution.get("brand_name", {}) or {}
+    brands = sorted(brand_counts.keys(), key=len, reverse=True)
+
+    for brand in brands:
+        normalized_brand = normalize_text(brand)
+        if normalized_brand and normalized_brand in normalized_query:
+            return brand
+
+    candidates = []
+    for brand in brands:
+        normalized_brand = normalize_text(brand)
+        brand_tokens = normalized_brand.split()
+        matched_tokens = [t for t in brand_tokens if t in query_tokens]
+        if matched_tokens:
+            candidates.append((brand, len(matched_tokens), len(normalized_brand)))
+
+    if candidates:
+        candidates.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        return candidates[0][0]
+
+    return None
+
+
+def detect_category_from_query(query: str) -> str | None:
+    if not meili_index:
+        return None
+
+    normalized_query = normalize_text(query)
+    query_tokens = set(normalized_query.split())
+
+    result = meili_index.search("", {
+        "facets": ["categories"],
+        "limit": 0
+    })
+    facet_distribution = result.get("facetDistribution", {}) or {}
+    category_counts = facet_distribution.get("categories", {}) or {}
+    categories = sorted(category_counts.keys(), key=len, reverse=True)
+
+    for category in categories:
+        normalized_category = normalize_text(category)
+        if normalized_category and normalized_category in normalized_query:
+            return normalized_category
+
+    candidates = []
+    for category in categories:
+        normalized_category = normalize_text(category)
+        category_tokens = normalized_category.split()
+        matched_tokens = [t for t in category_tokens if t in query_tokens]
+        if matched_tokens:
+            candidates.append((normalized_category, len(matched_tokens), len(normalized_category)))
+
+    if candidates:
+        candidates.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        return candidates[0][0]
+
+    return None
+
+
+def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]:
+    if not brand:
+        return conditions
+
+    already_present = any(
+        c.get("field") == "brand_name" and (c.get("value") or "").strip().lower() == brand.strip().lower()
+        for c in conditions
+    )
+    if already_present:
+        return conditions
+
+    return conditions + [{
+        "field": "brand_name",
+        "operator": "equals",
+        "value": brand
+    }]
+
 def build_meili_filter(conditions: list | None, active_only: bool = True) -> str | None:
     filters = []
 
@@ -276,6 +363,41 @@ def fuse_text_results(
     return results
 
 
+def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
+    q = normalize_query(query_text or "")
+    tokens = set(q.split())
+
+    for r in results:
+        boost = 0.0
+
+        brand_name = normalize_text(r.get("brand_name") or "")
+        category_name = normalize_text(r.get("category_name") or "")
+        product_name = normalize_text(r.get("product_name") or "")
+        variant_name = normalize_text(r.get("variant_name") or "")
+
+        if brand_name and brand_name in q:
+            boost += 0.20
+
+        if "chair" in tokens and "chair" in category_name:
+            boost += 0.10
+        if "sofa" in tokens and "sofa" in category_name:
+            boost += 0.10
+        if "desk" in tokens and "desk" in category_name:
+            boost += 0.10
+        if "table" in tokens and "table" in category_name:
+            boost += 0.10
+
+        if any(token and token in product_name for token in tokens):
+            boost += 0.05
+        if any(token and token in variant_name for token in tokens):
+            boost += 0.05
+
+        r["score"] = float(r.get("score") or 0) + boost
+
+    results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+    return results
+
+
 
 def _normalize(nd: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(nd, axis=-1, keepdims=True)
@@ -398,15 +520,30 @@ async def search(
     query_text = (text or "").strip()
     normalized_text = normalize_query(query_text)
 
+    brand = detect_brand_from_query(query_text)
+    category = detect_category_from_query(query_text)
+
+    effective_conditions = add_brand_condition(conditions, brand)
+    text_query = category if category else (normalized_text or query_text)
+
     vec_rows = []
 
     meili_rows = []
     try:
         start = time.perf_counter()
         meili_rows = meili_text_search(
-            text=normalized_text or query_text,
-            conditions=conditions,
+            text=text_query,
+            conditions=effective_conditions,
             limit=max(int(top_k) * 3, 50),
+        )
+        mdur = (time.perf_counter() - start) * 1000
+        print(
+            f"Meili text search took {mdur:.2f} ms | "
+            f"raw='{query_text}' | normalized='{normalized_text}' | "
+            f"brand='{brand}' | category='{category}' | text_query='{text_query}'"
+        )
+    except Exception as e:
+        print("Meili search failed:", e)
         )
         mdur = (time.perf_counter() - start) * 1000
         print(f"Meili text search took {mdur:.2f} ms")
@@ -419,5 +556,6 @@ async def search(
         threshold=float(threshold),
         top_k=int(top_k),
     )
+    results = boost_exact_matches(results, query_text)
 
     return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
