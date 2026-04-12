@@ -305,9 +305,7 @@ def meili_text_search(
 def normalize_clip_score(raw: float | None, threshold: float) -> float:
     if raw is None:
         return 0.0
-    if raw <= threshold:
-        return 0.0
-    return min(1.0, max(0.0, (raw - threshold) / max(1e-6, (1.0 - threshold))))
+    return max(0.0, float(raw))
 
 def fetch_rows_for_variant_ids(variant_ids: list[str]) -> dict[str, dict]:
     if not variant_ids:
@@ -354,7 +352,10 @@ def fuse_text_results(
 ) -> list[dict]:
     combined = {}
 
-    for r in vec_rows:
+    for clip_rank, r in enumerate(
+        sorted(vec_rows, key=lambda x: float(x.get("similarity") or 0), reverse=True),
+        start=1,
+    ):
         variant_id = r.get("product_variant_id")
         if not variant_id:
             continue
@@ -363,6 +364,7 @@ def fuse_text_results(
             "variant_id": variant_id,
             "clip_row": r,
             "clip_score": normalize_clip_score(float(r.get("similarity") or 0), threshold),
+            "clip_rank": clip_rank,
             "meili_score": 0.0,
             "meili_rank": None,
         }
@@ -376,6 +378,7 @@ def fuse_text_results(
             "variant_id": variant_id,
             "clip_row": None,
             "clip_score": 0.0,
+            "clip_rank": None,
             "meili_score": 0.0,
             "meili_rank": None,
         })
@@ -385,10 +388,21 @@ def fuse_text_results(
     # weights:
     # - lexical precision from Meili matters a lot for brand/model/category text
     # - CLIP still helps on softer semantic terms
+    RRF_K = 20.0
+
     for item in combined.values():
+        meili_rrf = 0.0
+        clip_rrf = 0.0
+
+        if item.get("meili_rank") is not None:
+            meili_rrf = 1.0 / (RRF_K + float(item["meili_rank"]))
+
+        if item.get("clip_rank") is not None:
+            clip_rrf = 1.0 / (RRF_K + float(item["clip_rank"]))
+
         item["final_score"] = (
-            meili_weight * item["meili_score"] +
-            clip_weight * item["clip_score"]
+            meili_weight * meili_rrf +
+            clip_weight * clip_rrf
         )
 
     ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
