@@ -88,13 +88,19 @@ export default function SearchPanel({
                   <div className="text-xs font-medium text-amber-700 uppercase tracking-wide mb-2">
                     Search Debug
                   </div>
-                  <div className="text-sm text-amber-900">
+
+                  <div className="text-sm text-amber-900 space-y-1">
                     <div><span className="font-semibold">Typed:</span> {debugSearch.baseQuery || "—"}</div>
                     <div><span className="font-semibold">Sent:</span> {debugSearch.query || "—"}</div>
-                    <div><span className="font-semibold">Brand terms:</span> {debugSearch.brandTerms?.join(", ") || "—"}</div>
-                    <div><span className="font-semibold">Category terms:</span> {debugSearch.categoryTerms?.join(", ") || "—"}</div>
                     <div><span className="font-semibold">Threshold:</span> {debugSearch.threshold}</div>
                     <div><span className="font-semibold">Has image:</span> {debugSearch.hasFile ? "Yes" : "No"}</div>
+
+                    <div className="pt-2 border-t border-amber-200 mt-2">
+                      <div><span className="font-semibold">Detected brand:</span> {debugSearch.backend?.detected_brand || "—"}</div>
+                      <div><span className="font-semibold">Detected category field:</span> {debugSearch.backend?.detected_category_field || "—"}</div>
+                      <div><span className="font-semibold">Detected category value:</span> {debugSearch.backend?.detected_category_value || "—"}</div>
+                      <div><span className="font-semibold">Backend text query:</span> {debugSearch.backend?.text_query || "—"}</div>
+                    </div>
                   </div>
 
                   {debugSearch.conditions?.length > 0 && (
@@ -102,14 +108,6 @@ export default function SearchPanel({
                       {JSON.stringify(debugSearch.conditions, null, 2)}
                     </pre>
                   )}
-                </div>
-              )}           
-              {debugSearch?.backend && (
-                <div className="mt-3 border-t border-amber-200 pt-3 text-sm text-amber-900">
-                  <div><span className="font-semibold">Detected brand:</span> {debugSearch.backend.detected_brand || "—"}</div>
-                  <div><span className="font-semibold">Detected category field:</span> {debugSearch.backend.detected_category_field || "—"}</div>
-                  <div><span className="font-semibold">Detected category value:</span> {debugSearch.backend.detected_category_value || "—"}</div>
-                  <div><span className="font-semibold">Backend text query:</span> {debugSearch.backend.text_query || "—"}</div>
                 </div>
               )}   
           

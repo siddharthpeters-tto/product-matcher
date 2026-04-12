@@ -88,7 +88,7 @@ def detect_brand_from_query(query: str) -> str | None:
     if not meili_index:
         return None
 
-    normalized_query = normalize_text(query)
+    normalized_query = normalize_query(query)
     query_tokens = set(normalized_query.split())
 
     result = meili_index.search("", {
@@ -100,7 +100,7 @@ def detect_brand_from_query(query: str) -> str | None:
     brands = sorted(brand_counts.keys(), key=len, reverse=True)
 
     for brand in brands:
-        normalized_brand = normalize_text(brand)
+        normalized_brand = normalize_query(brand)
         if normalized_brand and normalized_brand in normalized_query:
             return brand
 
@@ -142,14 +142,14 @@ def detect_category_from_query(query: str) -> tuple[str | None, str | None]:
     if not meili_index:
         return (None, None)
 
-    normalized_query = normalize_text(query)
+    normalized_query = normalize_query(query)
     query_tokens = set(normalized_query.split())
 
     candidates = []
 
     for field in ["subcategory", "parent_category", "categories"]:
         for raw_value in _get_facet_values(field):
-            normalized_value = normalize_text(raw_value)
+            normalized_value = normalize_query(raw_value)
             if not normalized_value:
                 continue
 
