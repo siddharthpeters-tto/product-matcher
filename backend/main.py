@@ -262,6 +262,9 @@ def meili_text_search(
     if filter_text:
         params["filter"] = filter_text
 
+    print("MEILI QUERY:", q)
+    print("MEILI FILTER:", params.get("filter"))
+    print("MEILI PARAMS:", params)
     result = meili_index.search(q, params)
     hits = result.get("hits", []) or []
 
