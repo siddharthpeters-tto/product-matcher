@@ -18,10 +18,8 @@ from PIL import Image as PILImage
 # Env & Clients
 # --------------------------
 load_dotenv()
-SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
-SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2NjU1MTYsImV4cCI6MjA3MTI0MTUxNn0.bNj0M4SwVT0SVRVCFarBJLtBS-nYrSM7ZsZ_nGsMR5U"
-#SUPABASE_URL = os.getenv("SUPABASE_URL")
-#SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY in env")
 
@@ -526,11 +524,29 @@ async def search(
     effective_conditions = add_brand_condition(conditions, brand)
     text_query = category if category else (normalized_text or query_text)
 
+    # Encode text for CLIP vector search
     vec_rows = []
+    try:
+        qvec = encode_text(query_text)[0].tolist()
+        start_vec = time.perf_counter()
+        resp = supabase.rpc(
+            "match_product_images",
+            {
+                "query_embedding": qvec,
+                "match_count": int(top_k) * 3,
+                "threshold": float(threshold),
+            },
+        ).execute()
+        dur_vec = (time.perf_counter() - start_vec) * 1000
+        print(f"RPC/vector (text) took {dur_vec:.2f} ms for top_k={int(top_k)*3}, threshold={threshold}")
+        vec_rows = resp.data or []
+    except Exception as e:
+        print(f"Vector search failed for text query: {e}")
 
     meili_rows = []
+    mdur = 0
+    start = time.perf_counter()
     try:
-        start = time.perf_counter()
         meili_rows = meili_text_search(
             text=text_query,
             conditions=effective_conditions,
@@ -543,12 +559,9 @@ async def search(
             f"brand='{brand}' | category='{category}' | text_query='{text_query}'"
         )
     except Exception as e:
-        print("Meili search failed:", e)
-        )
         mdur = (time.perf_counter() - start) * 1000
-        print(f"Meili text search took {mdur:.2f} ms")
-    except Exception as e:
         print("Meili search failed:", e)
+        print(f"Meili text search took {mdur:.2f} ms")
 
     results = fuse_text_results(
         vec_rows=vec_rows,
