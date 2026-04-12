@@ -187,19 +187,6 @@ def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]
         "value": brand
     }]
 
-def build_text_query(query_text: str, detected_brand: str | None, detected_category_value: str | None) -> str:
-    q = normalize_query(query_text)
-    tokens = q.split()
-
-    brand_tokens = set(normalize_text(detected_brand or "").split())
-    category_tokens = set(normalize_text(detected_category_value or "").split())
-
-    leftovers = [
-        t for t in tokens
-        if t not in brand_tokens and t not in category_tokens
-    ]
-
-    return " ".join(leftovers).strip()
 
 def build_meili_filter(
     conditions: list | None,
@@ -265,11 +252,39 @@ def meili_text_search(
     print("MEILI QUERY:", q)
     print("MEILI FILTER:", params.get("filter"))
     print("MEILI PARAMS:", params)
-    result = meili_index.search(q, {
-        **params,
-        "matchingStrategy": "last"
-    })
-    hits = result.get("hits", []) or []
+    tokens = normalize_query(text).split()
+
+    queries = [
+        " ".join(tokens),                 # full query
+        " ".join(tokens[1:]),             # drop first
+        " ".join(tokens[:-1]),            # drop last
+    ]
+
+    best_hits = {}
+
+    for q_idx, q_variant in enumerate(queries):
+        if not q_variant:
+            continue
+
+        res = meili_index.search(q_variant, {
+            **params,
+            "matchingStrategy": "last"
+        })
+
+        for rank, h in enumerate(res.get("hits", []), start=1):
+            vid = h.get("id")
+            if not vid:
+                continue
+
+            score = 1.0 / (rank + 20.0)
+
+            if vid not in best_hits or score > best_hits[vid]["score"]:
+                best_hits[vid] = {
+                    "hit": h,
+                    "score": score
+                }
+
+    hits = [v["hit"] for v in best_hits.values()]
 
     out = []
     for rank, hit in enumerate(hits, start=1):
@@ -414,7 +429,6 @@ def fuse_text_results(
 
 
 def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
-    q = normalize_query(query_text or "")
     tokens = set(q.split())
 
     for r in results:
