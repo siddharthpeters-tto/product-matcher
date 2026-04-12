@@ -360,6 +360,56 @@ def fuse_text_results(
 
     return results
 
+def map_vector_rows(rows: list[dict], top_k: int) -> list[dict]:
+    out = []
+    for r in sorted(rows, key=lambda x: float(x.get("similarity") or 0), reverse=True)[:top_k]:
+        out.append({
+            "image_id": r.get("image_id"),
+            "image_url": r.get("image_url"),
+            "image_path": r.get("image_url"),
+            "score": r.get("similarity"),
+            "variant_id": r.get("product_variant_id"),
+            "variant_name": r.get("variant_name"),
+            "model_number": r.get("model_number"),
+            "product_url": r.get("product_url"),
+            "product_id": r.get("product_id"),
+            "product_name": r.get("product_name"),
+            "brand_id": r.get("brand_id"),
+            "brand_name": r.get("brand_name"),
+            "product_category": r.get("product_category"),
+            "category_name": r.get("product_category"),
+        })
+    return out
+
+
+def map_meili_rows(rows: list[dict], top_k: int) -> list[dict]:
+    ranked = rows[:top_k]
+    rows_by_variant = fetch_rows_for_variant_ids(
+        [r.get("variant_id") for r in ranked if r.get("variant_id")]
+    )
+
+    out = []
+    for r in ranked:
+        variant_id = r.get("variant_id")
+        row = rows_by_variant.get(variant_id, {})
+        out.append({
+            "image_id": row.get("image_id"),
+            "image_url": row.get("image_url"),
+            "image_path": row.get("image_url"),
+            "score": r.get("meili_score"),
+            "variant_id": row.get("variant_id") or variant_id,
+            "variant_name": row.get("variant_name"),
+            "model_number": row.get("model_number"),
+            "product_url": row.get("product_url"),
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name"),
+            "brand_id": row.get("brand_id"),
+            "brand_name": row.get("brand_name"),
+            "product_category": row.get("category_name"),
+            "category_name": row.get("category_name"),
+        })
+    return out
+
 
 def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
     q = normalize_query(query_text or "")
@@ -563,12 +613,22 @@ async def search(
         print("Meili search failed:", e)
         print(f"Meili text search took {mdur:.2f} ms")
 
-    results = fuse_text_results(
+    hybrid_results = fuse_text_results(
         vec_rows=vec_rows,
         meili_rows=meili_rows,
         threshold=float(threshold),
         top_k=int(top_k),
     )
-    results = boost_exact_matches(results, query_text)
+    hybrid_results = boost_exact_matches(hybrid_results, query_text)
 
-    return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
+    clip_results = map_vector_rows(vec_rows, int(top_k))
+    meili_results = map_meili_rows(meili_rows, int(top_k))
+
+    return {
+        "count": len(hybrid_results),
+        "results": hybrid_results[:top_k],
+        "hybrid_results": hybrid_results[:top_k],
+        "clip_results": clip_results,
+        "meili_results": meili_results,
+        "preview": preview_data_url,
+    }
