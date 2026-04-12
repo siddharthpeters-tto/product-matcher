@@ -265,7 +265,10 @@ def meili_text_search(
     print("MEILI QUERY:", q)
     print("MEILI FILTER:", params.get("filter"))
     print("MEILI PARAMS:", params)
-    result = meili_index.search(q, params)
+    result = meili_index.search(q, {
+        **params,
+        "matchingStrategy": "last"
+    })
     hits = result.get("hits", []) or []
 
     out = []
