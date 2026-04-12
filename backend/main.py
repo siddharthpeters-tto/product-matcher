@@ -119,39 +119,55 @@ def detect_brand_from_query(query: str) -> str | None:
     return None
 
 
-def detect_category_from_query(query: str) -> str | None:
+def _get_facet_values(field: str) -> list[str]:
     if not meili_index:
-        return None
+        return []
+
+    result = meili_index.search("", {
+        "facets": [field],
+        "limit": 0
+    })
+    facet_distribution = result.get("facetDistribution", {}) or {}
+    values = facet_distribution.get(field, {}) or {}
+    return sorted(values.keys(), key=len, reverse=True)
+
+
+def detect_category_from_query(query: str) -> tuple[str | None, str | None]:
+    """
+    Returns (field_name, matched_value), where field_name is one of:
+    - subcategory
+    - parent_category
+    - categories
+    """
+    if not meili_index:
+        return (None, None)
 
     normalized_query = normalize_text(query)
     query_tokens = set(normalized_query.split())
 
-    result = meili_index.search("", {
-        "facets": ["categories"],
-        "limit": 0
-    })
-    facet_distribution = result.get("facetDistribution", {}) or {}
-    category_counts = facet_distribution.get("categories", {}) or {}
-    categories = sorted(category_counts.keys(), key=len, reverse=True)
-
-    for category in categories:
-        normalized_category = normalize_text(category)
-        if normalized_category and normalized_category in normalized_query:
-            return normalized_category
-
     candidates = []
-    for category in categories:
-        normalized_category = normalize_text(category)
-        category_tokens = normalized_category.split()
-        matched_tokens = [t for t in category_tokens if t in query_tokens]
-        if matched_tokens:
-            candidates.append((normalized_category, len(matched_tokens), len(normalized_category)))
+
+    for field in ["subcategory", "parent_category", "categories"]:
+        for raw_value in _get_facet_values(field):
+            normalized_value = normalize_text(raw_value)
+            if not normalized_value:
+                continue
+
+            # exact phrase containment first
+            if normalized_value in normalized_query:
+                return (field, raw_value)
+
+            value_tokens = normalized_value.split()
+            matched_tokens = [t for t in value_tokens if t in query_tokens]
+            if matched_tokens:
+                candidates.append((field, raw_value, len(matched_tokens), len(normalized_value)))
 
     if candidates:
-        candidates.sort(key=lambda x: (x[1], x[2]), reverse=True)
-        return candidates[0][0]
+        candidates.sort(key=lambda x: (x[2], x[3]), reverse=True)
+        field, raw_value, _, _ = candidates[0]
+        return (field, raw_value)
 
-    return None
+    return (None, None)
 
 
 def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]:
@@ -171,7 +187,26 @@ def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]
         "value": brand
     }]
 
-def build_meili_filter(conditions: list | None, active_only: bool = True) -> str | None:
+def build_text_query(query_text: str, detected_brand: str | None, detected_category_value: str | None) -> str:
+    q = normalize_query(query_text)
+    tokens = q.split()
+
+    brand_tokens = set(normalize_text(detected_brand or "").split())
+    category_tokens = set(normalize_text(detected_category_value or "").split())
+
+    leftovers = [
+        t for t in tokens
+        if t not in brand_tokens and t not in category_tokens
+    ]
+
+    return " ".join(leftovers).strip()
+
+def build_meili_filter(
+    conditions: list | None,
+    active_only: bool = True,
+    detected_category_field: str | None = None,
+    detected_category_value: str | None = None,
+) -> str | None:
     filters = []
 
     if active_only:
@@ -185,33 +220,45 @@ def build_meili_filter(conditions: list | None, active_only: bool = True) -> str
         if not value:
             continue
 
-        if field == "brand_name":
-            if operator in {"equals", "contains"}:
-                filters.append(f'brand_name = "{value}"')
+        if field == "brand_name" and operator in {"equals", "contains"}:
+            filters.append(f'brand_name = "{value}"')
 
-        elif field == "category":
-            # categories is an array in Meili docs; subcategory is also indexed
-            if operator == "equals":
-                filters.append(f'categories = "{value}"')
-            elif operator == "contains":
-                # no true contains filter for arrays, so lean on lexical query for the term
-                pass
+        elif field == "category" and operator in {"equals", "contains"}:
+            filters.append(
+                f'(subcategory = "{value}" OR parent_category = "{value}" OR categories = "{value}")'
+            )
+
+    if detected_category_field and detected_category_value:
+        safe_value = detected_category_value.strip().replace('"', '\\"')
+        if detected_category_field == "categories":
+            filters.append(f'categories = "{safe_value}"')
+        else:
+            filters.append(f'{detected_category_field} = "{safe_value}"')
 
     return " AND ".join(filters) if filters else None
 
-def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> list[dict]:
+def meili_text_search(
+    text: str,
+    conditions: list | None,
+    limit: int = 50,
+    detected_category_field: str | None = None,
+    detected_category_value: str | None = None,
+) -> list[dict]:
     if not meili_index:
         return []
 
     q = normalize_query(text or "")
-    if not q and not conditions:
-        return []
 
     params = {
         "limit": limit,
     }
 
-    filter_text = build_meili_filter(conditions, active_only=True)
+    filter_text = build_meili_filter(
+        conditions,
+        active_only=True,
+        detected_category_field=detected_category_field,
+        detected_category_value=detected_category_value,
+    )
     if filter_text:
         params["filter"] = filter_text
 
@@ -223,11 +270,10 @@ def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> li
         out.append({
             "variant_id": hit.get("id"),
             "meili_rank": rank,
-            "meili_score": 1.0 / (rank + 20.0),  # RRF-style soft score
+            "meili_score": 1.0 / (rank + 20.0),
             "meili_hit": hit,
         })
     return out
-
 
 def normalize_clip_score(raw: float | None, threshold: float) -> float:
     if raw is None:
@@ -525,22 +571,35 @@ async def search(
     text_query = category if category else (normalized_text or query_text)
 
     # Encode text for CLIP vector search
+    query_text = (text or "").strip()
+    normalized_text = normalize_query(query_text)
+
+    brand = detect_brand_from_query(query_text)
+    category_field, category_value = detect_category_from_query(query_text)
+
+    effective_conditions = add_brand_condition(conditions, brand)
+    text_query = build_text_query(query_text, brand, category_value)
+
     vec_rows = []
 
     meili_rows = []
     mdur = 0
     start = time.perf_counter()
+
     try:
         meili_rows = meili_text_search(
             text=text_query,
             conditions=effective_conditions,
             limit=max(int(top_k) * 3, 50),
+            detected_category_field=category_field,
+            detected_category_value=category_value,
         )
         mdur = (time.perf_counter() - start) * 1000
         print(
             f"Meili text search took {mdur:.2f} ms | "
             f"raw='{query_text}' | normalized='{normalized_text}' | "
-            f"brand='{brand}' | category='{category}' | text_query='{text_query}'"
+            f"brand='{brand}' | category_field='{category_field}' | "
+            f"category_value='{category_value}' | text_query='{text_query}'"
         )
     except Exception as e:
         mdur = (time.perf_counter() - start) * 1000
