@@ -726,7 +726,7 @@ async def search(
         meili_weight=meili_weight,
         clip_weight=clip_weight,
     )
-    results = boost_exact_matches(results, query_text)
+    #results = boost_exact_matches(results, query_text)
 
     return {
         "count": len(results),
