@@ -568,7 +568,7 @@ async def search(
     category_field, category_value = detect_category_from_query(query_text)
 
     effective_conditions = add_brand_condition(conditions, brand)
-    text_query = build_text_query(query_text, brand, category_value)
+    text_query = normalize_query(query_text)
 
     vec_rows = []
 
