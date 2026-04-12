@@ -526,22 +526,6 @@ async def search(
 
     # Encode text for CLIP vector search
     vec_rows = []
-    try:
-        qvec = encode_text(query_text)[0].tolist()
-        start_vec = time.perf_counter()
-        resp = supabase.rpc(
-            "match_product_images",
-            {
-                "query_embedding": qvec,
-                "match_count": int(top_k) * 3,
-                "threshold": float(threshold),
-            },
-        ).execute()
-        dur_vec = (time.perf_counter() - start_vec) * 1000
-        print(f"RPC/vector (text) took {dur_vec:.2f} ms for top_k={int(top_k)*3}, threshold={threshold}")
-        vec_rows = resp.data or []
-    except Exception as e:
-        print(f"Vector search failed for text query: {e}")
 
     meili_rows = []
     mdur = 0
