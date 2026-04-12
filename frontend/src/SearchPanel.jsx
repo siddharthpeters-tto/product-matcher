@@ -16,6 +16,7 @@ export default function SearchPanel({
   chatLoading,
   pendingAction,
   applyPendingAction,
+  debugSearch,
 }) {
 
   const assistantScrollRef = useRef(null);
@@ -81,6 +82,28 @@ export default function SearchPanel({
                   </button>
                 </div>
               )}
+
+              {debugSearch && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-xs font-medium text-amber-700 uppercase tracking-wide mb-2">
+                    Search Debug
+                  </div>
+                  <div className="text-sm text-amber-900">
+                    <div><span className="font-semibold">Typed:</span> {debugSearch.baseQuery || "—"}</div>
+                    <div><span className="font-semibold">Sent:</span> {debugSearch.query || "—"}</div>
+                    <div><span className="font-semibold">Brand terms:</span> {debugSearch.brandTerms?.join(", ") || "—"}</div>
+                    <div><span className="font-semibold">Category terms:</span> {debugSearch.categoryTerms?.join(", ") || "—"}</div>
+                    <div><span className="font-semibold">Threshold:</span> {debugSearch.threshold}</div>
+                    <div><span className="font-semibold">Has image:</span> {debugSearch.hasFile ? "Yes" : "No"}</div>
+                  </div>
+
+                  {debugSearch.conditions?.length > 0 && (
+                    <pre className="mt-2 overflow-auto rounded-lg bg-white p-2 text-xs text-gray-700 border border-amber-200">
+                      {JSON.stringify(debugSearch.conditions, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}              
           
               {chatMessages.map((msg, idx) => (
                 <div
@@ -115,7 +138,7 @@ export default function SearchPanel({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!loading && !chatLoading) sendChatMessage();
+                if (!loading) runSearch();
               }
             }}
           />

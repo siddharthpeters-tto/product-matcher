@@ -279,7 +279,6 @@ export default function SearchShell() {
             filters={filters}
             setFilters={setFilters}
             filterOptions={filterOptions}
-            debugSearch={debugSearch}
           />
         </div>
 
@@ -304,6 +303,7 @@ export default function SearchShell() {
             filterOptions={filterOptions}
             pendingAction={pendingAction}
             applyPendingAction={applyPendingAction}
+            debugSearch={debugSearch}
           />
         </div>
       </div>
