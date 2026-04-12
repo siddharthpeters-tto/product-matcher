@@ -560,17 +560,7 @@ async def search(
 
     # ------------------
     # Plain text search → Meili + CLIP hybrid
-    # ------------------
-    query_text = (text or "").strip()
-    normalized_text = normalize_query(query_text)
-
-    brand = detect_brand_from_query(query_text)
-    category = detect_category_from_query(query_text)
-
-    effective_conditions = add_brand_condition(conditions, brand)
-    text_query = category if category else (normalized_text or query_text)
-
-    # Encode text for CLIP vector search
+    # ----------------
     query_text = (text or "").strip()
     normalized_text = normalize_query(query_text)
 
@@ -614,4 +604,17 @@ async def search(
     )
     results = boost_exact_matches(results, query_text)
 
-    return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
+    return {
+        "count": len(results),
+        "results": results[:top_k],
+        "preview": preview_data_url,
+        "debug": {
+            "raw_query": query_text,
+            "normalized_text": normalized_text,
+            "detected_brand": brand,
+            "detected_category_field": category_field,
+            "detected_category_value": category_value,
+            "text_query": text_query,
+            "effective_conditions": effective_conditions,
+        },
+    }

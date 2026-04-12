@@ -83,16 +83,6 @@ export default function SearchShell() {
 
   const query = queryParts.filter(Boolean).join(" ").trim();
 
-  setDebugSearch({
-    baseQuery,
-    query,
-    conditions,
-    brandTerms,
-    categoryTerms,
-    hasFile: !!file,
-    threshold,
-  });
-
   if (!query && !file) {
     setMessage("Enter a search term or upload an image.");
     return;
@@ -119,6 +109,16 @@ export default function SearchShell() {
           conditions,
         });
       }
+      setDebugSearch({
+        baseQuery,
+        query,
+        conditions,
+        brandTerms,
+        categoryTerms,
+        hasFile: !!file,
+        threshold,
+        backend: data.debug || null,
+      });
 
       setResults(data.results || []);
       setMessage(`Found ${data.results?.length || 0} results.`);

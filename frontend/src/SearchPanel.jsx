@@ -103,7 +103,15 @@ export default function SearchPanel({
                     </pre>
                   )}
                 </div>
-              )}              
+              )}           
+              {debugSearch?.backend && (
+                <div className="mt-3 border-t border-amber-200 pt-3 text-sm text-amber-900">
+                  <div><span className="font-semibold">Detected brand:</span> {debugSearch.backend.detected_brand || "—"}</div>
+                  <div><span className="font-semibold">Detected category field:</span> {debugSearch.backend.detected_category_field || "—"}</div>
+                  <div><span className="font-semibold">Detected category value:</span> {debugSearch.backend.detected_category_value || "—"}</div>
+                  <div><span className="font-semibold">Backend text query:</span> {debugSearch.backend.text_query || "—"}</div>
+                </div>
+              )}   
           
               {chatMessages.map((msg, idx) => (
                 <div
