@@ -18,6 +18,7 @@ export default function SearchShell() {
   const [chatLoading, setChatLoading] = useState(false);
   const [threshold, setThreshold] = useState(0.25);
   const [results, setResults] = useState([]);
+  const [debugSearch, setDebugSearch] = useState(null); 
   const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
 
   const filterOptions = useMemo(() => {
@@ -80,12 +81,22 @@ export default function SearchShell() {
       }
     }
 
-    const query = queryParts.filter(Boolean).join(" ").trim();
+  const query = queryParts.filter(Boolean).join(" ").trim();
 
-    if (!query && !file) {
-      setMessage("Enter a search term or upload an image.");
-      return;
-    }
+  setDebugSearch({
+    baseQuery,
+    query,
+    conditions,
+    brandTerms,
+    categoryTerms,
+    hasFile: !!file,
+    threshold,
+  });
+
+  if (!query && !file) {
+    setMessage("Enter a search term or upload an image.");
+    return;
+  }
 
     setLoading(true);
     setMessage("Searching...");
@@ -199,6 +210,7 @@ export default function SearchShell() {
     setMessage("Ready to search");
     setFilters({ brand: "all", category: "all" });
     setPendingAction(null);
+    setDebugSearch(null);
     setChatMessages([{ role: "assistant", text: "hello" }]);
   }
 
@@ -267,6 +279,7 @@ export default function SearchShell() {
             filters={filters}
             setFilters={setFilters}
             filterOptions={filterOptions}
+            debugSearch={debugSearch}
           />
         </div>
 

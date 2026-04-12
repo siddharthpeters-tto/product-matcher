@@ -48,6 +48,7 @@ export default function ResultsStage({
   filters = { brand: "all", category: "all" },
   setFilters,
   filterOptions = { brands: [], categories: [] },
+  debugSearch = null,
 }) {
   return (
     <section>
@@ -141,6 +142,22 @@ export default function ResultsStage({
       {message && !loading && (
         <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           {message}
+        </div>
+      )}
+      {debugSearch && !loading && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold mb-2">Search debug</div>
+          <div><span className="font-medium">Typed:</span> {debugSearch.baseQuery || "—"}</div>
+          <div><span className="font-medium">Sent query:</span> {debugSearch.query || "—"}</div>
+          <div><span className="font-medium">Brand terms:</span> {debugSearch.brandTerms?.join(", ") || "—"}</div>
+          <div><span className="font-medium">Category terms:</span> {debugSearch.categoryTerms?.join(", ") || "—"}</div>
+          <div><span className="font-medium">Threshold:</span> {debugSearch.threshold}</div>
+          <div><span className="font-medium">Has image:</span> {debugSearch.hasFile ? "Yes" : "No"}</div>
+          {debugSearch.conditions?.length > 0 && (
+            <pre className="mt-2 overflow-auto rounded-lg bg-white p-2 text-xs text-gray-700 border border-amber-200">
+              {JSON.stringify(debugSearch.conditions, null, 2)}
+            </pre>
+          )}
         </div>
       )}
 
