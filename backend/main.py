@@ -587,8 +587,8 @@ async def search(
             text=text_query,
             conditions=effective_conditions,
             limit=max(int(top_k) * 3, 50),
-            detected_category_field=category_field,
-            detected_category_value=category_value,
+            detected_category_field=None,
+            detected_category_value=None,
         )
         mdur = (time.perf_counter() - start) * 1000
         print(
