@@ -1,22 +1,19 @@
 import os, io, time
 from typing import Optional
 
+import re
+import meilisearch
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
-from pydantic import BaseModel
-from typing import List, Literal
 import json
-from typing import Any
-from openai import OpenAI
-from prompts import SYSTEM_PROMPT, LLM_SYSTEM_MESSAGE
 
 
 import base64
 import torch, clip
 import numpy as np
-import psutil
 import gc
 from PIL import Image as PILImage
 from rembg import remove, new_session
@@ -25,13 +22,24 @@ from rembg import remove, new_session
 # Env & Clients
 # --------------------------
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
-SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2NjU1MTYsImV4cCI6MjA3MTI0MTUxNn0.bNj0M4SwVT0SVRVCFarBJLtBS-nYrSM7ZsZ_nGsMR5U"
+#SUPABASE_URL="https://rffqzfdzosambdxmpuac.supabase.co/"
+#SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmZnF6ZmR6b3NhbWJkeG1wdWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2NjU1MTYsImV4cCI6MjA3MTI0MTUxNn0.bNj0M4SwVT0SVRVCFarBJLtBS-nYrSM7ZsZ_nGsMR5U"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_ANON_KEY in env")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+MEILI_URL = os.getenv("MEILI_URL")
+MEILI_MASTER_KEY = os.getenv("MEILI_MASTER_KEY")
+
+meili_client = None
+meili_index = None
+
+if MEILI_URL and MEILI_MASTER_KEY:
+    meili_client = meilisearch.Client(MEILI_URL, MEILI_MASTER_KEY)
+    meili_index = meili_client.index("products")
 
 # --------------------------
 # Model (CLIP ViT-B/32)
@@ -52,36 +60,229 @@ except Exception as e:
     print(f"❌ Failed to load u2net: {e}")
     _rm_session = None
 
-def canonicalize_filter_value(action, context):
-    if not isinstance(action, dict):
-        return action
+# Adding Meilisearch helpers
+STOP_WORDS = {
+    "how", "many", "do", "i", "have", "what", "which",
+    "where", "are", "the", "is", "there", "enough"
+}
 
-    if action.get("type") != "filter":
-        return action
+TERM_NORMALIZATION = {
+    "chairs": "chair",
+    "desks": "desk",
+    "tables": "table",
+    "sofas": "sofa",
+    "stools": "stool",
+    "benches": "bench",
+    "pedrali's": "pedrali",
+    "arper's": "arper",
+}
 
-    filter_key = action.get("filterKey")
-    raw_value = (action.get("value") or "").strip()
-    if not filter_key or not raw_value:
-        return action
+def normalize_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-    options = []
-    if filter_key == "brand":
-        options = [x.get("value") for x in (context.get("brandBreakdown") or []) if x.get("value")]
-    elif filter_key == "category":
-        options = [x.get("value") for x in (context.get("categoryBreakdown") or []) if x.get("value")]
+def normalize_query(raw_query: str) -> str:
+    text = normalize_text(raw_query)
+    tokens = text.split()
 
-    raw_lower = raw_value.lower()
-    for opt in options:
-        if opt.lower() == raw_lower:
-            action["value"] = opt
-            return action
+    cleaned = []
+    for token in tokens:
+        token = TERM_NORMALIZATION.get(token, token)
+        if token not in STOP_WORDS:
+            cleaned.append(token)
 
-    for opt in options:
-        if opt.lower() in raw_lower or raw_lower in opt.lower():
-            action["value"] = opt
-            return action
+    return " ".join(cleaned).strip()
 
-    return action
+def build_meili_filter(conditions: list | None, active_only: bool = True) -> str | None:
+    filters = []
+
+    if active_only:
+        filters.append("active = true")
+
+    for cond in conditions or []:
+        field = cond.get("field")
+        operator = cond.get("operator")
+        value = (cond.get("value") or "").strip().replace('"', '\\"')
+
+        if not value:
+            continue
+
+        if field == "brand_name":
+            if operator in {"equals", "contains"}:
+                filters.append(f'brand_name = "{value}"')
+
+        elif field == "category":
+            # categories is an array in Meili docs; subcategory is also indexed
+            if operator == "equals":
+                filters.append(f'categories = "{value}"')
+            elif operator == "contains":
+                # no true contains filter for arrays, so lean on lexical query for the term
+                pass
+
+    return " AND ".join(filters) if filters else None
+
+def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> list[dict]:
+    if not meili_index:
+        return []
+
+    q = normalize_query(text or "")
+    if not q and not conditions:
+        return []
+
+    params = {
+        "limit": limit,
+    }
+
+    filter_text = build_meili_filter(conditions, active_only=True)
+    if filter_text:
+        params["filter"] = filter_text
+
+    result = meili_index.search(q, params)
+    hits = result.get("hits", []) or []
+
+    out = []
+    for rank, hit in enumerate(hits, start=1):
+        out.append({
+            "variant_id": hit.get("id"),
+            "meili_rank": rank,
+            "meili_score": 1.0 / (rank + 20.0),  # RRF-style soft score
+            "meili_hit": hit,
+        })
+    return out
+
+
+def normalize_clip_score(raw: float | None, threshold: float) -> float:
+    if raw is None:
+        return 0.0
+    if raw <= threshold:
+        return 0.0
+    return min(1.0, max(0.0, (raw - threshold) / max(1e-6, (1.0 - threshold))))
+
+def fetch_rows_for_variant_ids(variant_ids: list[str]) -> dict[str, dict]:
+    if not variant_ids:
+        return {}
+
+    result = (
+        supabase.table("product_catalogue_flat")
+        .select(",".join([
+            "variant_id",
+            "product_id",
+            "product_name",
+            "variant_name",
+            "model_number",
+            "product_url",
+            "brand_id",
+            "brand_name",
+            "category_name",
+            "image_id",
+            "image_url",
+        ]))
+        .in_("variant_id", variant_ids)
+        .execute()
+    )
+
+    rows = result.data or []
+    best_by_variant = {}
+
+    for r in rows:
+        vid = r.get("variant_id")
+        if not vid:
+            continue
+        if vid not in best_by_variant:
+            best_by_variant[vid] = r
+
+    return best_by_variant
+
+def fuse_text_results(
+    vec_rows: list[dict],
+    meili_rows: list[dict],
+    threshold: float,
+    top_k: int,
+) -> list[dict]:
+    combined = {}
+
+    for r in vec_rows:
+        variant_id = r.get("product_variant_id")
+        if not variant_id:
+            continue
+
+        combined[variant_id] = {
+            "variant_id": variant_id,
+            "clip_row": r,
+            "clip_score": normalize_clip_score(float(r.get("similarity") or 0), threshold),
+            "meili_score": 0.0,
+            "meili_rank": None,
+        }
+
+    for r in meili_rows:
+        variant_id = r.get("variant_id")
+        if not variant_id:
+            continue
+
+        item = combined.setdefault(variant_id, {
+            "variant_id": variant_id,
+            "clip_row": None,
+            "clip_score": 0.0,
+            "meili_score": 0.0,
+            "meili_rank": None,
+        })
+        item["meili_score"] = max(item["meili_score"], float(r.get("meili_score") or 0))
+        item["meili_rank"] = r.get("meili_rank")
+
+    # weights:
+    # - lexical precision from Meili matters a lot for brand/model/category text
+    # - CLIP still helps on softer semantic terms
+    for item in combined.values():
+        item["final_score"] = (
+            0.65 * item["meili_score"] +
+            0.35 * item["clip_score"]
+        )
+
+    ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
+    rows_by_variant = fetch_rows_for_variant_ids([x["variant_id"] for x in ranked])
+
+    results = []
+    for item in ranked:
+        row = rows_by_variant.get(item["variant_id"])
+        if not row:
+            clip_row = item.get("clip_row") or {}
+            row = {
+                "variant_id": item["variant_id"],
+                "product_id": clip_row.get("product_id"),
+                "product_name": clip_row.get("product_name"),
+                "variant_name": clip_row.get("variant_name"),
+                "model_number": clip_row.get("model_number"),
+                "product_url": clip_row.get("product_url"),
+                "brand_id": clip_row.get("brand_id"),
+                "brand_name": clip_row.get("brand_name"),
+                "category_name": clip_row.get("product_category"),
+                "image_id": clip_row.get("image_id"),
+                "image_url": clip_row.get("image_url"),
+            }
+
+        results.append({
+            "image_id": row.get("image_id"),
+            "image_url": row.get("image_url"),
+            "image_path": row.get("image_url"),
+            "score": item["final_score"],
+            "clip_score": item["clip_score"],
+            "meili_score": item["meili_score"],
+            "meili_rank": item["meili_rank"],
+            "variant_id": row.get("variant_id"),
+            "variant_name": row.get("variant_name"),
+            "model_number": row.get("model_number"),
+            "product_url": row.get("product_url"),
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name"),
+            "brand_id": row.get("brand_id"),
+            "brand_name": row.get("brand_name"),
+            "product_category": row.get("category_name"),
+            "category_name": row.get("category_name"),
+        })
+
+    return results
 
 def _ensure_rgb_jpeg_safe(pil_img: PILImage.Image) -> PILImage.Image:  # NEW
     # rembg may return RGBA; flatten to RGB so JPEG saves/embeds cleanly
@@ -113,10 +314,6 @@ def encode_text(text: str) -> np.ndarray:
     feat = feat.cpu().numpy().astype(np.float32)
     return _normalize(feat)
 
-def log_memory(stage=""):
-    mem = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-    print(f"📊 Memory ({stage}): {mem:.2f} MB")
-
 # --------------------------
 # FastAPI
 # --------------------------
@@ -126,434 +323,6 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"]
 )
-
-class ChatMessage(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str
-
-class ChatRequest(BaseModel):
-    message: str
-    history: List[ChatMessage] = []
-    context: dict = {}
-
-class ChatCondition(BaseModel):
-    field: str
-    operator: str = "equals"
-    value: str
-
-class ChatAction(BaseModel):
-    type: Optional[str] = None
-    query: Optional[str] = None
-    filterKey: Optional[str] = None
-    value: Optional[str] = None
-    metric: Optional[str] = None
-    field: Optional[str] = None
-    conditions: Optional[List[ChatCondition]] = None
-
-class ChatResponse(BaseModel):
-    reply: str
-    action: Optional[ChatAction] = None
-
-def build_chat_prompt(req: ChatRequest) -> str:
-    ctx = req.context or {}
-    count = ctx.get("resultCount", 0)
-    has_image = ctx.get("hasImage", False)
-    filters = ctx.get("filters", {}) or {}
-    top_results = ctx.get("topResults", []) or []
-    brand_breakdown = ctx.get("brandBreakdown", []) or []
-    category_breakdown = ctx.get("categoryBreakdown", []) or []
-
-    active_filters = {
-        k: v for k, v in filters.items()
-        if v and v != "all"
-    }
-
-    payload = {
-        "user_message": req.message,
-        "history": [m.model_dump() for m in req.history[-8:]],
-        "context": {
-            "hasImage": has_image,
-            "resultCount": count,
-            "activeFilters": active_filters,
-            "topResults": top_results,
-            "brandBreakdown": brand_breakdown,
-            "categoryBreakdown": category_breakdown,
-        },
-    }
-
-    return f"""
-{SYSTEM_PROMPT}
-
-Input:
-{json.dumps(payload, ensure_ascii=False)}
-""".strip()
-
-def call_llm_for_chat(prompt: str) -> dict:
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return {
-            "reply": "The LLM client is not installed on the server yet.",
-            "action": None,
-        }
-
-    if not OPENAI_API_KEY:
-        return {
-            "reply": "The assistant is not configured with an API key yet.",
-            "action": None,
-        }
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.2,
-        messages=[
-            {"role": "system", "content": LLM_SYSTEM_MESSAGE},
-            {"role": "user", "content": prompt},
-        ],
-    )
-
-    content = response.choices[0].message.content
-
-    try:
-        return json.loads(content)
-    except Exception:
-        return {
-            "reply": content or "I can help refine the current results.",
-            "action": None,
-        }
-
-def normalize_aggregate_action(action: dict):
-    if not isinstance(action, dict):
-        return action
-
-    if action.get("type") != "aggregate":
-        return action
-
-    conditions = action.get("conditions")
-    if isinstance(conditions, list) and len(conditions) > 0:
-        return action
-
-    field = action.get("field")
-    value = action.get("value")
-
-    if field and value:
-        operator = "contains" if field == "category" else "equals"
-        action["conditions"] = [
-            {
-                "field": field,
-                "operator": operator,
-                "value": value,
-            }
-        ]
-
-    return action
-
-def apply_search_conditions(results: list, conditions: list):
-    if not conditions:
-        return results
-
-    def matches(item, cond):
-        field = cond.get("field")
-        operator = cond.get("operator")
-        value = (cond.get("value") or "").strip().lower()
-
-        if not value:
-            return True
-
-        if field == "brand_name":
-            actual = str(
-                item.get("brand_name")
-                or item.get("brand")
-                or ""
-            ).strip().lower()
-
-            if operator == "equals":
-                return actual == value
-            if operator == "contains":
-                return value in actual
-
-        if field == "category":
-            actual = str(
-                item.get("category_name")
-                or item.get("product_category")
-                or item.get("category")
-                or ""
-            ).strip().lower()
-
-            if operator == "equals":
-                return actual == value
-            if operator == "contains":
-                return value in actual
-
-        return True
-
-    filtered = []
-    for item in results:
-        if all(matches(item, cond) for cond in conditions):
-            filtered.append(item)
-
-    return filtered
-
-def run_aggregate_action(action: dict):
-    metric = action.get("metric")
-    conditions = action.get("conditions") or []
-
-    if metric != "count":
-        raise ValueError("Unsupported aggregate metric")
-
-    if not conditions:
-        raise ValueError("Aggregate requires at least one condition")
-
-    query = supabase.table("product_catalogue_flat").select("product_id")
-
-    applied_conditions = []
-
-    for cond in conditions:
-        field = cond.get("field")
-        operator = cond.get("operator")
-        value = (cond.get("value") or "").strip()
-
-        if not value:
-            raise ValueError("Aggregate condition missing value")
-
-        if field == "category":
-            if operator == "contains":
-                query = query.ilike("category_name", f"%{value}%")
-            elif operator == "equals":
-                query = query.ilike("category_name", value)
-            else:
-                raise ValueError("Unsupported category operator")
-
-        elif field == "brand_name":
-            if operator == "equals":
-                query = query.ilike("brand_name", value)
-            elif operator == "contains":
-                query = query.ilike("brand_name", f"%{value}%")
-            else:
-                raise ValueError("Unsupported brand operator")
-
-        else:
-            raise ValueError(f"Unsupported aggregate field: {field}")
-
-        applied_conditions.append({
-            "field": field,
-            "operator": operator,
-            "value": value,
-        })
-
-    result = query.execute()
-
-    product_ids = {
-        row["product_id"]
-        for row in (result.data or [])
-        if row.get("product_id")
-    }
-
-    return {
-        "metric": metric,
-        "conditions": applied_conditions,
-        "count": len(product_ids),
-    }
-
-    
-@app.post("/api/chat")
-async def chat(req: ChatRequest):
-    try:
-        print("CHAT CONTEXT:", req.context)
-
-        prompt = build_chat_prompt(req)
-        raw = call_llm_for_chat(prompt)
-
-        if not isinstance(raw, dict):
-            raw = {
-                "reply": "I couldn’t interpret that response reliably.",
-                "action": None,
-            }
-
-        reply = raw.get("reply") or "I can help refine the current results."
-        action = raw.get("action")
-
-        if not isinstance(action, dict):
-            action = None
-
-        # Canonicalize filter values against visible UI options
-        action = canonicalize_filter_value(action, req.context or {})
-
-        # Normalize aggregate actions so old single-field outputs
-        # still become conditions-based actions
-        action = normalize_aggregate_action(action)
-
-        if not action or not action.get("type"):
-            action = None
-        else:
-            action_type = action.get("type")
-
-            if action_type not in {"search", "filter", "aggregate", None}:
-                action = None
-
-            elif action_type == "filter":
-                if action.get("filterKey") not in {"brand", "category"}:
-                    action = None
-                elif not action.get("value"):
-                    action = None
-                else:
-                    action = {
-                        "type": "filter",
-                        "query": None,
-                        "filterKey": action.get("filterKey"),
-                        "value": action.get("value"),
-                        "metric": None,
-                        "field": None,
-                        "conditions": None,
-                    }
-
-            elif action_type == "search":
-                query = (action.get("query") or "").strip()
-                conditions = action.get("conditions") or []
-
-                if not query and not conditions:
-                    action = None
-                else:
-                    normalized_conditions = []
-
-                    for cond in conditions:
-                        if not isinstance(cond, dict):
-                            action = None
-                            break
-
-                        field = cond.get("field")
-                        operator = cond.get("operator")
-                        value = (cond.get("value") or "").strip()
-
-                        if field not in {"category", "brand_name"}:
-                            action = None
-                            break
-
-                        if operator not in {"equals", "contains"}:
-                            action = None
-                            break
-
-                        if not value:
-                            action = None
-                            break
-
-                        normalized_conditions.append({
-                            "field": field,
-                            "operator": operator,
-                            "value": value,
-                        })
-
-                    if action is not None:
-                        action = {
-                            "type": "search",
-                            "query": query or None,
-                            "filterKey": None,
-                            "value": None,
-                            "metric": None,
-                            "field": None,
-                            "conditions": normalized_conditions or None,
-                        }
-
-            elif action_type == "aggregate":
-                metric = action.get("metric")
-                conditions = action.get("conditions") or []
-
-                if metric not in {"count"}:
-                    action = None
-                elif not isinstance(conditions, list) or not conditions:
-                    action = None
-                else:
-                    normalized_conditions = []
-
-                    for cond in conditions:
-                        if not isinstance(cond, dict):
-                            action = None
-                            break
-
-                        field = cond.get("field")
-                        operator = cond.get("operator")
-                        value = (cond.get("value") or "").strip()
-
-                        if field not in {"category", "brand_name"}:
-                            action = None
-                            break
-
-                        if operator not in {"equals", "contains"}:
-                            action = None
-                            break
-
-                        if not value:
-                            action = None
-                            break
-
-                        normalized_conditions.append({
-                            "field": field,
-                            "operator": operator,
-                            "value": value,
-                        })
-
-                    if action is not None:
-                        action = {
-                            "type": "aggregate",
-                            "query": None,
-                            "filterKey": None,
-                            "value": None,
-                            "metric": metric,
-                            "field": None,
-                            "conditions": normalized_conditions,
-                        }
-
-            else:
-                action = None
-
-        aggregate_result = None
-
-        if action and action.get("type") == "aggregate":
-            try:
-                aggregate_result = run_aggregate_action(action)
-                count = aggregate_result["count"]
-                conditions = aggregate_result.get("conditions", [])
-
-                if len(conditions) == 1:
-                    cond = conditions[0]
-                    field = cond["field"]
-                    value = cond["value"]
-
-                    if field == "category":
-                        reply = f"We currently have {count} products in the category '{value}'."
-                    elif field == "brand_name":
-                        reply = f"We currently have {count} products for the brand '{value}'."
-                    else:
-                        reply = f"We currently have {count} matching products."
-                else:
-                    label_parts = []
-                    for cond in conditions:
-                        if cond["field"] == "brand_name":
-                            label_parts.append(cond["value"])
-                        elif cond["field"] == "category":
-                            label_parts.append(cond["value"])
-
-                    if label_parts:
-                        reply = f"We currently have {count} products matching {' + '.join(label_parts)}."
-                    else:
-                        reply = f"We currently have {count} products matching those catalogue conditions."
-
-            except Exception as e:
-                print("aggregate error:", e)
-                aggregate_result = None
-                action = None
-                reply = "I couldn’t run that catalogue query reliably. Try rephrasing it as a search."
-
-        return {
-            "reply": reply,
-            "action": action,
-            "aggregate_result": aggregate_result,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def root():
@@ -572,9 +341,9 @@ async def search(
     """Search products.
 
     Rules:
-    - If an image is uploaded, use the existing vector image search path.
-    - If text search includes structured conditions, use direct Supabase catalogue query.
-    - If text search has no structured conditions, use the existing hybrid vector + keyword path.
+    - If an image is uploaded, use vector image search.
+    - Otherwise use text search with Meilisearch + CLIP fusion.
+    - Optional structured conditions are applied to the Meilisearch path.
     """
     if not file and not (text and text.strip()) and not conditions_json:
         raise HTTPException(status_code=400, detail="Provide 'file' or 'text'")
@@ -588,7 +357,6 @@ async def search(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid conditions_json")
 
-    rows = []
     preview_data_url = None
 
     # ------------------
@@ -603,9 +371,7 @@ async def search(
 
         if remove_bg == 1:
             try:
-                log_memory("before remove()")
                 cut = remove(img, session=_rm_session)
-                log_memory("after remove()")
                 img = _ensure_rgb_jpeg_safe(cut)
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=92)
@@ -664,150 +430,49 @@ async def search(
         return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
 
     # ------------------
-    # Structured text search → direct Supabase query
+    # Plain text search → Meili + CLIP hybrid
     # ------------------
-    if conditions:
-        try:
-            query = supabase.table("product_catalogue_flat").select(
-                ",".join([
-                        "variant_id",
-                        "product_id",
-                        "product_name",
-                        "variant_name",
-                        "model_number",
-                        "product_url",
-                        "brand_id",
-                        "brand_name",
-                        "category_name",
-                        "image_id",
-                        "image_url",
-                ])
-            )
+    query_text = (text or "").strip()
+    normalized_text = normalize_query(query_text)
 
-            for cond in conditions:
-                field = cond.get("field")
-                operator = cond.get("operator")
-                value = (cond.get("value") or "").strip()
-
-                if not value:
-                    continue
-
-                if field == "brand_name":
-                    if operator == "equals":
-                        query = query.ilike("brand_name", value)
-                    elif operator == "contains":
-                        query = query.ilike("brand_name", f"%{value}%")
-
-                elif field == "category":
-                    if operator == "equals":
-                        query = query.ilike("category_name", value)
-                    elif operator == "contains":
-                        query = query.ilike("category_name", f"%{value}%")
-
-            result = query.limit(int(top_k)).execute()
-            rows = result.data or []
-
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Structured catalogue search failed: {e}")
-
-        results = []
-        seen = set()
-
-        for r in rows:
-            variant_id = r.get("variant_id")
-            product_id = r.get("product_id")
-            image_id = r.get("image_id")
-            dedupe_key = variant_id or product_id
-
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
-
-            results.append({
-                "image_id": r.get("image_id"),
-                "image_url": r.get("image_url"),
-                "image_path": r.get("image_url"),
-                "score": 1.0,
-                "variant_id": variant_id,
-                "variant_name": r.get("variant_name"),
-                "model_number": r.get("model_number"),
-                "product_url": r.get("product_url"),
-                "product_id": product_id,
-                "product_name": r.get("product_name"),
-                "brand_id": r.get("brand_id"),
-                "brand_name": r.get("brand_name"),
-                "product_category": r.get("category_name"),
-                "category_name": r.get("category_name"),
-            })
-
-        return {"count": len(results), "results": results[:top_k], "preview": None}
-    # ------------------
-    # Plain text search → existing HYBRID vector + keyword path
-    # ------------------
-    qvec = encode_text(text.strip())[0].tolist()
+    qvec = encode_text(query_text)[0].tolist() if query_text else None
 
     vec_rows = []
+    if qvec is not None:
+        try:
+            start = time.perf_counter()
+            vresp = supabase.rpc(
+                "match_product_images",
+                {
+                    "query_embedding": qvec,
+                    "match_count": max(int(top_k) * 3, 50),
+                    "threshold": float(threshold),
+                },
+            ).execute()
+            vdur = (time.perf_counter() - start) * 1000
+            print(f"RPC/vector (text) took {vdur:.2f} ms")
+            vec_rows = vresp.data or []
+        except Exception as e:
+            print("Vector RPC failed:", e)
+
+    meili_rows = []
     try:
         start = time.perf_counter()
-        vresp = supabase.rpc(
-            "match_product_images",
-            {
-                "query_embedding": qvec,
-                "match_count": int(top_k),
-                "threshold": float(threshold),
-            },
-        ).execute()
-        vdur = (time.perf_counter() - start) * 1000
-        print(f"RPC/vector (text) took {vdur:.2f} ms for top_k={top_k}, threshold={threshold}")
-        vec_rows = vresp.data or []
+        meili_rows = meili_text_search(
+            text=normalized_text or query_text,
+            conditions=conditions,
+            limit=max(int(top_k) * 3, 50),
+        )
+        mdur = (time.perf_counter() - start) * 1000
+        print(f"Meili text search took {mdur:.2f} ms")
     except Exception as e:
-        print("Vector RPC failed:", e)
+        print("Meili search failed:", e)
 
-    kw_rows = []
-    try:
-        start = time.perf_counter()
-        kresp = supabase.rpc(
-            "keyword_match_product_images",
-            {
-                "q": text.strip(),
-                "match_count": int(top_k),
-            },
-        ).execute()
-        kdur = (time.perf_counter() - start) * 1000
-        print(f"RPC/keyword took {kdur:.2f} ms for top_k={top_k}")
-        kw_rows = kresp.data or []
-    except Exception as e:
-        print("Keyword RPC failed:", e)
-
-    by_id = {}
-    for r in vec_rows:
-        by_id[r.get("image_id")] = r
-    for r in kw_rows:
-        _id = r.get("image_id")
-        if _id not in by_id:
-            r["similarity"] = max(0.99, float(r.get("similarity") or 0))
-            by_id[_id] = r
-    rows = list(by_id.values())
-
-    def map_row(r: dict) -> dict:
-        return {
-            "image_id": r.get("image_id"),
-            "image_url": r.get("image_url"),
-            "image_path": r.get("image_url"),
-            "score": r.get("similarity"),
-            "variant_id": r.get("product_variant_id"),
-            "variant_name": r.get("variant_name"),
-            "model_number": r.get("model_number"),
-            "product_url": r.get("product_url"),
-            "product_id": r.get("product_id"),
-            "product_name": r.get("product_name"),
-            "brand_id": r.get("brand_id"),
-            "brand_name": r.get("brand_name"),
-            "product_category": r.get("product_category"),
-            "category_name": r.get("product_category"),
-        }
-
-    results = [map_row(r) for r in rows]
-    results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
+    results = fuse_text_results(
+        vec_rows=vec_rows,
+        meili_rows=meili_rows,
+        threshold=float(threshold),
+        top_k=int(top_k),
+    )
 
     return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
