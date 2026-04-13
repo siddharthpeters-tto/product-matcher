@@ -25,6 +25,8 @@ export default function SearchShell() {
   const [semanticWeight, setSemanticWeight] = useState(0.5);
   const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
 
+  
+
   const filterOptions = useMemo(() => {
     const brands = Array.from(
       new Set(results.map((item) => getBrand(item)).filter(Boolean))
@@ -37,17 +39,31 @@ export default function SearchShell() {
     return { brands, categories };
   }, [results]);
 
-  const filteredResults = useMemo(() => {
-    return results.filter((item) => {
-      const brandMatch =
-        filters.brand === "all" || getBrand(item) === filters.brand;
+  function matchesFilters(item, filters) {
+  const brandMatch =
+    filters.brand === "all" || getBrand(item) === filters.brand;
 
-      const categoryMatch =
-        filters.category === "all" || getCategory(item) === filters.category;
+  const categoryMatch =
+    filters.category === "all" || getCategory(item) === filters.category;
 
-      return brandMatch && categoryMatch;
-    });
-  }, [results, filters]);
+  return brandMatch && categoryMatch;
+}
+
+const filteredResults = useMemo(() => {
+  return results.filter((item) => matchesFilters(item, filters));
+}, [results, filters]);
+
+const filteredHybridResults = useMemo(() => {
+  return hybridResults.filter((item) => matchesFilters(item, filters));
+}, [hybridResults, filters]);
+
+const filteredClipResults = useMemo(() => {
+  return clipResults.filter((item) => matchesFilters(item, filters));
+}, [clipResults, filters]);
+
+const filteredMeiliResults = useMemo(() => {
+  return meiliResults.filter((item) => matchesFilters(item, filters));
+}, [meiliResults, filters]);
 
   useEffect(() => {
     if (!loading && results.length > 0) {
@@ -288,9 +304,9 @@ export default function SearchShell() {
             loading={loading}
             results={filteredResults}
             rawResults={results}
-            clipResults={clipResults}
-            meiliResults={meiliResults}
-            hybridResults={hybridResults}
+            clipResults={filteredClipResults}
+            meiliResults={filteredMeiliResults}
+            hybridResults={filteredHybridResults}
             message={message}
             filters={filters}
             setFilters={setFilters}
