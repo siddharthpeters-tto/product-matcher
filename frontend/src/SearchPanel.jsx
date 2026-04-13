@@ -100,9 +100,8 @@ export default function SearchPanel({
 
                     <div className="pt-2 border-t border-amber-200 mt-2">
                       <div><span className="font-semibold">Detected brand:</span> {debugSearch.backend?.detected_brand || "—"}</div>
-                      <div><span className="font-semibold">Detected category field:</span> {debugSearch.backend?.detected_category_field || "—"}</div>
-                      <div><span className="font-semibold">Detected category value:</span> {debugSearch.backend?.detected_category_value || "—"}</div>
-                      <div><span className="font-semibold">Backend text query:</span> {debugSearch.backend?.text_query || "—"}</div>
+                      <div><span className="font-semibold">Detected category:</span> {debugSearch.backend?.detected_category || "—"}</div>
+                      <div><span className="font-semibold">Backend text query:</span> {debugSearch.backend?.backend_text_query || "—"}</div>
                     </div>
                   </div>
 
@@ -203,26 +202,23 @@ export default function SearchPanel({
             </div>
           )}
         </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-3">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-            Semantic Weight
+        <details className="rounded-2xl border border-gray-200 bg-white p-3">
+          <summary className="text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer">
+            Advanced (disabled)
+          </summary>
+
+          <div className="mt-3 opacity-50 pointer-events-none space-y-4">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Semantic Blend (inactive)</div>
+              <input type="range" className="w-full" disabled />
+            </div>
+
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Similarity Threshold</div>
+              <input type="range" className="w-full" disabled />
+            </div>
           </div>
-          <div className="text-sm font-semibold text-gray-800 mb-1">
-            {semanticWeight.toFixed(2)}
-          </div>
-          <div className="text-xs text-gray-500 mb-2">
-            0 = keyword-heavy, 1 = CLIP-heavy
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={semanticWeight}
-            onChange={(e) => setSemanticWeight(Number(e.target.value))}
-            className="w-full"
-          />
-        </div>        
+        </details>      
 
         <div className="rounded-2xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
