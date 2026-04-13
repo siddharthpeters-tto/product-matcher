@@ -32,10 +32,16 @@ function getImagePath(item) {
   return "";
 }
 
-function getMatchScore(item) {
-  const imageScore = item?.images?.[0]?.score;
-  const fallbackScore = item?.score;
-  return ((imageScore ?? fallbackScore ?? 0) * 100).toFixed(1);
+function getVisibleScore(item) {
+  const rawScore =
+    item?.debug?.final_score ??
+    item?.debug?.meili_score ??
+    item?.debug?.clip_score ??
+    item?.images?.[0]?.score ??
+    item?.score;
+
+  if (typeof rawScore !== "number") return "Score: —";
+  return `Score: ${rawScore.toFixed(3)}`;
 }
 
 function ResultGrid({ title, items = [] }) {
@@ -49,7 +55,7 @@ function ResultGrid({ title, items = [] }) {
         {items.map((item, i) => {
           const imagePath = getImagePath(item);
           const resolvedImage = resolveImageUrl(imagePath);
-          const matchScore = getMatchScore(item);
+          const visibleScore = getVisibleScore(item);
 
           return (
             <div
@@ -74,7 +80,7 @@ function ResultGrid({ title, items = [] }) {
               </div>
 
               <div className="mt-2 text-sm font-medium text-indigo-700">
-                Match: {matchScore}%
+                {visibleScore}
               </div>
 
               {imagePath ? (
@@ -276,7 +282,7 @@ export default function ResultsStage({
                 <button
                   type="button"
                   onClick={() => toggleSection("hybrid")}
-                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                  className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-gray-50"
                 >
                   <div className="text-sm font-semibold text-gray-900">
                     Hybrid Results
@@ -300,7 +306,7 @@ export default function ResultsStage({
                 <button
                   type="button"
                   onClick={() => toggleSection("clip")}
-                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                  className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-gray-50"
                 >
                   <div className="text-sm font-semibold text-gray-900">
                     CLIP Results
@@ -324,7 +330,7 @@ export default function ResultsStage({
                 <button
                   type="button"
                   onClick={() => toggleSection("meili")}
-                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                  className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-gray-50"
                 >
                   <div className="text-sm font-semibold text-gray-900">
                     Meili Results

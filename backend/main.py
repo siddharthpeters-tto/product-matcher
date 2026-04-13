@@ -1,3 +1,8 @@
+#How to commit a change
+#git add backend/. 
+#git commit -m "Describe Change"
+#git push origin main
+
 import os, io, time
 from typing import Optional
 
@@ -349,25 +354,31 @@ def fuse_text_results(
                 "image_url": clip_row.get("image_url"),
             }
 
-        results.append({
-            "image_id": row.get("image_id"),
-            "image_url": row.get("image_url"),
-            "image_path": row.get("image_url"),
-            "score": item["final_score"],
-            "clip_score": item["clip_score"],
-            "meili_score": item["meili_score"],
-            "meili_rank": item["meili_rank"],
-            "variant_id": row.get("variant_id"),
-            "variant_name": row.get("variant_name"),
-            "model_number": row.get("model_number"),
-            "product_url": row.get("product_url"),
-            "product_id": row.get("product_id"),
-            "product_name": row.get("product_name"),
-            "brand_id": row.get("brand_id"),
-            "brand_name": row.get("brand_name"),
-            "product_category": row.get("category_name"),
-            "category_name": row.get("category_name"),
-        })
+            results.append({
+                "image_id": row.get("image_id"),
+                "image_url": row.get("image_url"),
+                "image_path": row.get("image_url"),
+                "score": item["final_score"],
+                "clip_score": item["clip_score"],
+                "meili_score": item["meili_score"],
+                "meili_rank": item["meili_rank"],
+                "variant_id": row.get("variant_id"),
+                "variant_name": row.get("variant_name"),
+                "model_number": row.get("model_number"),
+                "product_url": row.get("product_url"),
+                "product_id": row.get("product_id"),
+                "product_name": row.get("product_name"),
+                "brand_id": row.get("brand_id"),
+                "brand_name": row.get("brand_name"),
+                "product_category": row.get("category_name"),
+                "category_name": row.get("category_name"),
+                "debug": {
+                    "final_score": item["final_score"],
+                    "clip_score": item["clip_score"],
+                    "meili_score": item["meili_score"],
+                    "meili_rank": item["meili_rank"],
+                }
+            })
 
     return results
 
@@ -408,6 +419,7 @@ def map_meili_rows(rows: list[dict], top_k: int) -> list[dict]:
             "image_url": row.get("image_url"),
             "image_path": row.get("image_url"),
             "score": r.get("meili_score"),
+            "display_score": None,  # do not present this as a percent
             "variant_id": row.get("variant_id") or variant_id,
             "variant_name": row.get("variant_name"),
             "model_number": row.get("model_number"),
@@ -418,9 +430,13 @@ def map_meili_rows(rows: list[dict], top_k: int) -> list[dict]:
             "brand_name": row.get("brand_name"),
             "product_category": row.get("category_name"),
             "category_name": row.get("category_name"),
+            "debug": {
+                "meili_score": r.get("meili_score"),
+                "meili_rank": r.get("meili_rank"),
+                "raw_hit_id": (r.get("meili_hit") or {}).get("id"),
+            }
         })
     return out
-
 
 def boost_exact_matches(results: list[dict], query_text: str, detected_brand: str | None = None) -> list[dict]:
     q = normalize_query(query_text or "")
@@ -643,4 +659,16 @@ async def search(
         "clip_results": clip_results,
         "meili_results": meili_results,
         "preview": preview_data_url,
+        "debug": {
+            "typed_text": query_text,
+            "normalized_text": normalized_text,
+            "backend_text_query": text_query,
+            "detected_brand": brand,
+            "detected_category": category,
+            "threshold": float(threshold),
+            "has_image": False,
+            "semantic_weight": 0.35,
+            "meili_result_count": len(meili_rows),
+            "clip_result_count": len(vec_rows),
+        }
     }
