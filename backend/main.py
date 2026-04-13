@@ -603,7 +603,14 @@ async def search(
 
         results = [map_rpc_row(r) for r in rows]
         results.sort(key=lambda x: (x.get("score") or 0), reverse=True)
-        return {"count": len(results), "results": results[:top_k], "preview": preview_data_url}
+        return {
+            "count": len(results),
+            "results": results[:top_k],
+            "clip_results": results[:top_k],
+            "hybrid_results": [],
+            "meili_results": [],
+            "preview": preview_data_url,
+        }
 
     # ------------------
     # Plain text search → Meili + CLIP hybrid
