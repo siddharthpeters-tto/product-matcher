@@ -323,9 +323,6 @@ def fuse_text_results(
         item["meili_score"] = max(item["meili_score"], float(r.get("meili_score") or 0))
         item["meili_rank"] = r.get("meili_rank")
 
-    # weights:
-    # - lexical precision from Meili matters a lot for brand/model/category text
-    # - CLIP still helps on softer semantic terms
     for item in combined.values():
         item["final_score"] = (
             0.65 * item["meili_score"] +
@@ -354,31 +351,31 @@ def fuse_text_results(
                 "image_url": clip_row.get("image_url"),
             }
 
-            results.append({
-                "image_id": row.get("image_id"),
-                "image_url": row.get("image_url"),
-                "image_path": row.get("image_url"),
-                "score": item["final_score"],
+        results.append({
+            "image_id": row.get("image_id"),
+            "image_url": row.get("image_url"),
+            "image_path": row.get("image_url"),
+            "score": item["final_score"],
+            "clip_score": item["clip_score"],
+            "meili_score": item["meili_score"],
+            "meili_rank": item["meili_rank"],
+            "variant_id": row.get("variant_id"),
+            "variant_name": row.get("variant_name"),
+            "model_number": row.get("model_number"),
+            "product_url": row.get("product_url"),
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name"),
+            "brand_id": row.get("brand_id"),
+            "brand_name": row.get("brand_name"),
+            "product_category": row.get("category_name"),
+            "category_name": row.get("category_name"),
+            "debug": {
+                "final_score": item["final_score"],
                 "clip_score": item["clip_score"],
                 "meili_score": item["meili_score"],
                 "meili_rank": item["meili_rank"],
-                "variant_id": row.get("variant_id"),
-                "variant_name": row.get("variant_name"),
-                "model_number": row.get("model_number"),
-                "product_url": row.get("product_url"),
-                "product_id": row.get("product_id"),
-                "product_name": row.get("product_name"),
-                "brand_id": row.get("brand_id"),
-                "brand_name": row.get("brand_name"),
-                "product_category": row.get("category_name"),
-                "category_name": row.get("category_name"),
-                "debug": {
-                    "final_score": item["final_score"],
-                    "clip_score": item["clip_score"],
-                    "meili_score": item["meili_score"],
-                    "meili_rank": item["meili_rank"],
-                }
-            })
+            }
+        })
 
     return results
 
