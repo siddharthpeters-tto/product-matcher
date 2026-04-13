@@ -647,7 +647,7 @@ async def search(
             brand_conditions = add_brand_condition(list(effective_conditions or []), brand)
 
             brand_rows = meili_text_search(
-                text="",
+                text=category or "",
                 conditions=brand_conditions,
                 limit=meili_limit,
             )
