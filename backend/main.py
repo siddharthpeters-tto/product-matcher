@@ -234,6 +234,7 @@ def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> li
     print("[MEILI SEARCH]", {"q": q, "filter": filter_text, "limit": limit})
     result = meili_index.search(q, params)
     hits = result.get("hits", []) or []
+    print("[MEILI HITS COUNT]", {"filter": filter_text, "count": len(hits)})
 
     if hits:
         first = hits[0]
