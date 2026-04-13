@@ -436,7 +436,7 @@ def boost_exact_matches(results: list[dict], query_text: str, detected_brand: st
 
         if detected_brand:
             if normalize_text(brand_name) == normalize_text(detected_brand):
-                boost += 0.4   # strong boost
+                boost += 1.0
 
         if "chair" in tokens and "chair" in category_name:
             boost += 0.10
@@ -584,7 +584,7 @@ async def search(
     category = detect_category_from_query(query_text)
 
     effective_conditions = conditions
-    text_query = normalized_text or query_text
+    text_query = build_meili_query(query_text, brand)
 
     # Encode text for CLIP vector search
     vec_rows = []
