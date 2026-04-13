@@ -451,8 +451,11 @@ def boost_exact_matches(results: list[dict], query_text: str, detected_brand: st
             if normalize_text(brand_name) == normalize_text(detected_brand):
                 boost += 1.5
 
-        if "chair" in tokens and "chair" in category_name:
-            boost += 0.10
+        if "chair" in tokens:
+            if category_name == "chair":
+                boost += 0.20
+            elif "chair" in category_name:
+                boost += 0.10
         if "sofa" in tokens and "sofa" in category_name:
             boost += 0.10
         if "desk" in tokens and "desk" in category_name:
@@ -597,7 +600,7 @@ async def search(
     category = detect_category_from_query(query_text)
 
     effective_conditions = conditions
-    text_query = build_meili_query(query_text, brand)
+    text_query = normalized_text or query_text
 
     # Encode text for CLIP vector search
     vec_rows = []
@@ -622,16 +625,38 @@ async def search(
     mdur = 0
     start = time.perf_counter()
     try:
-        meili_rows = meili_text_search(
-            text=text_query,
-            conditions=effective_conditions,
-            limit=max(int(top_k) * 3, 50),
-        )
+        meili_limit = max(int(top_k) * 3, 50)
+
+        if brand:
+            brand_conditions = add_brand_condition(list(effective_conditions or []), brand)
+
+            brand_rows = meili_text_search(
+                text=text_query,
+                conditions=brand_conditions,
+                limit=meili_limit,
+            )
+
+            if brand_rows:
+                meili_rows = brand_rows
+            else:
+                meili_rows = meili_text_search(
+                    text=text_query,
+                    conditions=effective_conditions,
+                    limit=meili_limit,
+                )
+        else:
+            meili_rows = meili_text_search(
+                text=text_query,
+                conditions=effective_conditions,
+                limit=meili_limit,
+            )
+
         mdur = (time.perf_counter() - start) * 1000
         print(
             f"Meili text search took {mdur:.2f} ms | "
             f"raw='{query_text}' | normalized='{normalized_text}' | "
-            f"brand='{brand}' | category='{category}' | text_query='{text_query}'"
+            f"brand='{brand}' | category='{category}' | text_query='{text_query}' | "
+            f"meili_rows={len(meili_rows)}"
         )
     except Exception as e:
         mdur = (time.perf_counter() - start) * 1000
