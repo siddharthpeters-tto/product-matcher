@@ -254,7 +254,7 @@ def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> li
         out.append({
             "variant_id": hit.get("id"),
             "meili_rank": rank,
-            "meili_score": 1.0 / np.log2(rank + 1.5) # RRF-style soft score
+            "meili_score": 1.0 / np.log2(rank + 1.5), # RRF-style soft score
             "meili_hit": hit,
         })
     return out
