@@ -84,6 +84,17 @@ def normalize_query(raw_query: str) -> str:
 
     return " ".join(cleaned).strip()
 
+def build_meili_query(query_text: str, detected_brand: str | None = None) -> str:
+    q = normalize_query(query_text or "")
+    tokens = q.split()
+
+    remove_tokens = set()
+    if detected_brand:
+        remove_tokens.update(normalize_query(detected_brand).split())
+
+    kept = [t for t in tokens if t not in remove_tokens]
+    return " ".join(kept).strip() or q
+
 def detect_brand_from_query(query: str) -> str | None:
     if not meili_index:
         return None
@@ -572,7 +583,13 @@ async def search(
     category = detect_category_from_query(query_text)
 
     effective_conditions = add_brand_condition(conditions, brand)
-    text_query = category if category else (normalized_text or query_text)
+    text_query = build_meili_query(query_text, brand)
+
+    if category:
+        text_query = f"{text_query} {category}".strip()
+
+    if not text_query:
+        text_query = normalized_text or query_text
 
     # Encode text for CLIP vector search
     vec_rows = []
