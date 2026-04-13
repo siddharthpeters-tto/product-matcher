@@ -325,8 +325,8 @@ def fuse_text_results(
 
     for item in combined.values():
         item["final_score"] = (
-            0.65 * item["meili_score"] +
-            0.35 * item["clip_score"]
+            0.75 * item["meili_score"] +
+            0.25 * item["clip_score"]
         )
 
     ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
@@ -449,7 +449,7 @@ def boost_exact_matches(results: list[dict], query_text: str, detected_brand: st
 
         if detected_brand:
             if normalize_text(brand_name) == normalize_text(detected_brand):
-                boost += 1.0
+                boost += 1.5
 
         if "chair" in tokens and "chair" in category_name:
             boost += 0.10
