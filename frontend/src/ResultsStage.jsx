@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 const API_BASE = "https://product-matcher-production-dc50.up.railway.app";
 
@@ -40,7 +40,7 @@ function getMatchScore(item) {
 
 function ResultGrid({ title, items = [] }) {
   return (
-    <section className="mt-8">
+    <section>
       <div className="mb-6 text-sm font-medium text-gray-700">
         {title} · {items.length} matches
       </div>
@@ -117,6 +117,18 @@ export default function ResultsStage({
   setFilters,
   filterOptions = { brands: [], categories: [] },
 }) {
+    const [openSections, setOpenSections] = useState({
+      hybrid: true,
+      clip: false,
+      meili: false,
+    });
+
+    function toggleSection(key) {
+      setOpenSections((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+    }  
   return (
     <section>
       {file && (
@@ -258,24 +270,81 @@ export default function ResultsStage({
             </div>
           </div>
         </div>
-      ) : (
-        <>
-          <ResultGrid
-            title="Hybrid Results"
-            items={hybridResults.length ? hybridResults : results}
-          />
+          ) : (
+            <div className="space-y-4 mt-8">
+              <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection("hybrid")}
+                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                >
+                  <div className="text-sm font-semibold text-gray-900">
+                    Hybrid Results
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {(hybridResults.length ? hybridResults : results).length} matches {openSections.hybrid ? "−" : "+"}
+                  </div>
+                </button>
 
-          <ResultGrid
-            title="CLIP Results"
-            items={clipResults}
-          />
+                {openSections.hybrid && (
+                  <div className="px-4 pb-4">
+                    <ResultGrid
+                      title="Hybrid Results"
+                      items={hybridResults.length ? hybridResults : results}
+                    />
+                  </div>
+                )}
+              </section>
 
-          <ResultGrid
-            title="Meili Results"
-            items={meiliResults}
-          />
-        </>
-      )}
+              <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection("clip")}
+                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                >
+                  <div className="text-sm font-semibold text-gray-900">
+                    CLIP Results
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {clipResults.length} matches {openSections.clip ? "−" : "+"}
+                  </div>
+                </button>
+
+                {openSections.clip && (
+                  <div className="px-4 pb-4">
+                    <ResultGrid
+                      title="CLIP Results"
+                      items={clipResults}
+                    />
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection("meili")}
+                  className="w-full flex items-center justify-between px-4 py-4 text-left"
+                >
+                  <div className="text-sm font-semibold text-gray-900">
+                    Meili Results
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {meiliResults.length} matches {openSections.meili ? "−" : "+"}
+                  </div>
+                </button>
+
+                {openSections.meili && (
+                  <div className="px-4 pb-4">
+                    <ResultGrid
+                      title="Meili Results"
+                      items={meiliResults}
+                    />
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
     </section>
   );
 }
