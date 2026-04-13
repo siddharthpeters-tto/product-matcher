@@ -219,24 +219,6 @@ export default function SearchPanel({
             </div>
           </div>
         </details>      
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-3">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-            Similarity Threshold
-          </div>
-          <div className="text-sm font-semibold text-gray-800 mb-2">
-            {threshold.toFixed(2)}
-          </div>
-          <input
-            type="range"
-            min="0.1"
-            max="0.9"
-            step="0.01"
-            value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
-            className="w-full"
-          />
-        </div>
       </div>
     </aside>
   );
