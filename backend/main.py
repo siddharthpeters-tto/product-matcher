@@ -254,7 +254,7 @@ def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> li
         out.append({
             "variant_id": hit.get("id"),
             "meili_rank": rank,
-            "meili_score": 1.0 / (rank + 20.0),  # RRF-style soft score
+            "meili_score": 1.0 / np.log2(rank + 1.5) # RRF-style soft score
             "meili_hit": hit,
         })
     return out
@@ -340,8 +340,8 @@ def fuse_text_results(
 
     for item in combined.values():
         item["final_score"] = (
-            0.75 * item["meili_score"] +
-            0.25 * item["clip_score"]
+            0.85 * item["meili_score"] +
+            0.15 * item["clip_score"]
         )
 
     ranked = sorted(combined.values(), key=lambda x: x["final_score"], reverse=True)[:top_k]
