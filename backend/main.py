@@ -422,7 +422,7 @@ def map_meili_rows(rows: list[dict], top_k: int) -> list[dict]:
     return out
 
 
-def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
+def boost_exact_matches(results: list[dict], query_text: str, detected_brand: str | None = None) -> list[dict]:
     q = normalize_query(query_text or "")
     tokens = set(q.split())
 
@@ -434,8 +434,9 @@ def boost_exact_matches(results: list[dict], query_text: str) -> list[dict]:
         product_name = normalize_text(r.get("product_name") or "")
         variant_name = normalize_text(r.get("variant_name") or "")
 
-        if brand_name and brand_name in q:
-            boost += 0.20
+        if detected_brand:
+            if normalize_text(brand_name) == normalize_text(detected_brand):
+                boost += 0.4   # strong boost
 
         if "chair" in tokens and "chair" in category_name:
             boost += 0.10
@@ -582,14 +583,8 @@ async def search(
     brand = detect_brand_from_query(query_text)
     category = detect_category_from_query(query_text)
 
-    effective_conditions = add_brand_condition(conditions, brand)
-    text_query = build_meili_query(query_text, brand)
-
-    if category:
-        text_query = f"{text_query} {category}".strip()
-
-    if not text_query:
-        text_query = normalized_text or query_text
+    effective_conditions = conditions
+    text_query = normalized_text or query_text
 
     # Encode text for CLIP vector search
     vec_rows = []
@@ -636,7 +631,7 @@ async def search(
         threshold=float(threshold),
         top_k=int(top_k),
     )
-    hybrid_results = boost_exact_matches(hybrid_results, query_text)
+    hybrid_results = boost_exact_matches(hybrid_results, query_text, brand)
 
     clip_results = map_vector_rows(vec_rows, int(top_k))
     meili_results = map_meili_rows(meili_rows, int(top_k))
