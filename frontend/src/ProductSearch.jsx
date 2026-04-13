@@ -52,20 +52,28 @@ const queryParams = new URLSearchParams({
   if (!res.ok) {
     throw new Error(data?.message || data?.detail || "Search failed");
   }
-  const hybridRows = data.hybrid_results || data.results || [];
+  const hybridRows =
+    Array.isArray(data.hybrid_results) && data.hybrid_results.length > 0
+      ? data.hybrid_results
+      : (data.results || []);
   const clipRows = data.clip_results || [];
   const meiliRows = data.meili_results || [];
 
-  return {
-    raw: hybridRows,
-    rawResultsCount: hybridRows.length,
+  const primaryRows =
+    hybridRows.length > 0 ? hybridRows :
+    clipRows.length > 0 ? clipRows :
+    meiliRows;
 
-    results: hybridRows,
+  return {
+    raw: primaryRows,
+    rawResultsCount: primaryRows.length,
+
+    results: primaryRows,
     hybridResults: hybridRows,
     clipResults: clipRows,
     meiliResults: meiliRows,
 
-    groupedResults: groupResults(hybridRows),
+    groupedResults: groupResults(primaryRows),
     groupedHybridResults: groupResults(hybridRows),
     groupedClipResults: groupResults(clipRows),
     groupedMeiliResults: groupResults(meiliRows),
