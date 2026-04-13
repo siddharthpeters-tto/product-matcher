@@ -231,8 +231,23 @@ def meili_text_search(text: str, conditions: list | None, limit: int = 50) -> li
     if filter_text:
         params["filter"] = filter_text
 
+    print("[MEILI SEARCH]", {"q": q, "filter": filter_text, "limit": limit})
     result = meili_index.search(q, params)
     hits = result.get("hits", []) or []
+
+    if hits:
+        first = hits[0]
+        print("[MEILI FIRST HIT]", {
+            "id": first.get("id"),
+            "brand_name": first.get("brand_name"),
+            "product_name": first.get("product_name"),
+            "variant_name": first.get("variant_name"),
+            "categories": first.get("categories"),
+        })    
+
+        first_id = hits[0].get("id")
+        db_row = fetch_rows_for_variant_ids([first_id]).get(first_id)
+        print("[DB ROW FOR SAME ID]", db_row)
 
     out = []
     for rank, hit in enumerate(hits, start=1):
