@@ -139,7 +139,7 @@ def detect_category_from_query(query: str) -> str | None:
     if not meili_index:
         return None
 
-    normalized_query = normalize_text(query)
+    normalized_query = normalize_query(query)
     query_tokens = set(normalized_query.split())
 
     result = meili_index.search("", {
@@ -151,13 +151,13 @@ def detect_category_from_query(query: str) -> str | None:
     categories = sorted(category_counts.keys(), key=len, reverse=True)
 
     for category in categories:
-        normalized_category = normalize_text(category)
+        normalized_category = normalize_query(category)
         if normalized_category and normalized_category in normalized_query:
             return normalized_category
 
     candidates = []
     for category in categories:
-        normalized_category = normalize_text(category)
+        normalized_category = normalize_query(category)
         category_tokens = normalized_category.split()
         matched_tokens = [t for t in category_tokens if t in query_tokens]
         if matched_tokens:
@@ -168,7 +168,6 @@ def detect_category_from_query(query: str) -> str | None:
         return candidates[0][0]
 
     return None
-
 
 def add_brand_condition(conditions: list[dict], brand: str | None) -> list[dict]:
     if not brand:
